@@ -104,7 +104,7 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
 
 /* ---------- recommendations layout ---------- */
 .rec-layout { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 16px; height: 100%; min-height: 0; }
-.results-pane { display: flex; flex-direction: column; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.results-pane { display: flex; flex-direction: column; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden auto; }
 .detail-pane { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; overflow: auto; }
 
 .intent { border-bottom: 1px solid var(--line-soft); }
@@ -127,7 +127,7 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
 .scope-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--muted); }
 .sel-count { color: var(--accent-ink); font-weight: 700; background: var(--accent-soft); padding: 2px 9px; border-radius: 999px; }
 
-.table-scroll { flex: 1; min-height: 0; overflow: auto; position: relative; }
+.table-scroll { overflow: visible; position: relative; }
 .table-loading { position: absolute; inset: 0; z-index: 3; display: flex; align-items: flex-start; justify-content: center; padding-top: 64px; background: rgba(248, 250, 253, 0.55); backdrop-filter: blur(1.5px); animation: fade-in 0.15s ease; }
 .table-loading-card { display: inline-flex; align-items: center; gap: 9px; font-size: 13px; font-weight: 650; color: var(--accent-ink); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 9px 16px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12); }
 table.matches.is-loading tbody { opacity: 0.45; transition: opacity 0.2s ease; }
@@ -145,7 +145,7 @@ table.matches, .data-table { width: 100%; border-collapse: collapse; font-size: 
 .signal-col { width: 168px; }
 .protected-text { unicode-bidi: plaintext; white-space: pre-wrap; }
 .paper-cell { display: grid; gap: 5px; min-width: 0; }
-.paper-title { font-weight: 650; line-height: 1.4; color: var(--ink); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.paper-title { font-weight: 650; line-height: 1.4; color: var(--ink); overflow-wrap: anywhere; }
 .paper-meta-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .paper-meta { color: var(--muted); font-size: 11.5px; }
 .dir-chip { font-size: 11px; color: var(--ink-soft); background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
@@ -168,7 +168,7 @@ table.matches, .data-table { width: 100%; border-collapse: collapse; font-size: 
 .feedback-chip.not_relevant, .feedback-chip.hide { color: var(--danger); background: #fef2f2; border-color: #f7cccc; }
 .feedback-chip.dynamic { color: var(--accent-ink); background: var(--accent-soft); border-color: #cdd0fb; }
 
-.action-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 16px; border-top: 1px solid var(--line); background: var(--panel-2); }
+.action-bar { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 16px; border-top: 1px solid var(--line); background: var(--panel-2); }
 .action-hint { font-size: 12.5px; color: var(--muted); }
 .action-buttons { display: flex; gap: 8px; }
 
@@ -237,8 +237,8 @@ table.matches, .data-table { width: 100%; border-collapse: collapse; font-size: 
 /* ---------- responsive ---------- */
 @media (max-width: 1180px) {
   .rec-layout { grid-template-columns: 1fr; height: auto; }
+  .results-pane { overflow: visible; }
   .detail-pane { max-height: none; }
-  .table-scroll { max-height: 60vh; }
 }
 @media (max-width: 880px) {
   .app { grid-template-columns: 64px 1fr; }
