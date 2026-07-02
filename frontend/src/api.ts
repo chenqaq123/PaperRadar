@@ -294,7 +294,7 @@ export type BrowsePaper = {
 
 export async function browsePapers(params: {
   conference?: string;
-  year?: number;
+  year?: string;
   q?: string;
   eventtype?: string;
   sort?: string;
@@ -303,7 +303,7 @@ export async function browsePapers(params: {
 }): Promise<{ items: BrowsePaper[]; total: number; limit: number; offset: number }> {
   const search = new URLSearchParams();
   if (params.conference) search.set("conference", params.conference);
-  if (params.year) search.set("year", String(params.year));
+  if (params.year) search.set("year", params.year);
   if (params.q && params.q.trim()) search.set("q", params.q.trim());
   if (params.eventtype) search.set("eventtype", params.eventtype);
   if (params.sort) search.set("sort", params.sort);

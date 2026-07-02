@@ -5,6 +5,7 @@ import {
   BookmarkCheck,
   Brain,
   Check,
+  ChevronDown,
   ChevronRight,
   Database,
   Download,
@@ -58,6 +59,8 @@ import {
   saveCustomProfile,
   sendFeedback
 } from "./api";
+import katex from "katex";
+import "katex/dist/katex.min.css";
 import "./styles.css";
 
 type View = "browse" | "recommendations" | "queue" | "figures" | "profiles" | "data" | "settings";
@@ -1271,9 +1274,88 @@ function Metric({ label, value }: { label: string; value: number }) {
 
 const BROWSE_LIMIT = 60;
 
+// Render an abstract that may contain LaTeX: math ($...$, \(...\), \[...\], $$...$$)
+// via KaTeX, and common text macros (\emph, \textbf, escaped chars) cleaned up.
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function cleanLatexText(s: string): string {
+  let t = escapeHtml(s);
+  t = t.replace(/\\(?:emph|textit|textsl)\{([^{}]*)\}/g, "<em>$1</em>");
+  t = t.replace(/\\(?:textbf|bf)\{([^{}]*)\}/g, "<strong>$1</strong>");
+  t = t.replace(/\\(?:text|mathrm|mathbf|mathit|texttt|underline|mbox)\{([^{}]*)\}/g, "$1");
+  t = t.replace(/\\%/g, "%").replace(/\\&/g, "&amp;").replace(/\\_/g, "_").replace(/\\#/g, "#").replace(/\\\{/g, "{").replace(/\\\}/g, "}");
+  t = t.replace(/\u0000/g, "$").replace(/~/g, " ");
+  return t;
+}
+function renderAbstract(input: string): string {
+  if (!input) return "";
+  const src = input.replace(/\\\$/g, "\u0000"); // protect escaped dollar signs
+  const re = /\$\$([\s\S]+?)\$\$|\$([^$]+?)\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)/g;
+  const parts: string[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src))) {
+    if (m.index > last) parts.push(cleanLatexText(src.slice(last, m.index)));
+    const display = m[1] !== undefined || m[3] !== undefined;
+    const math = (m[1] ?? m[2] ?? m[3] ?? m[4] ?? "").replace(/\u0000/g, "$");
+    try {
+      parts.push(katex.renderToString(math, { throwOnError: false, displayMode: display }));
+    } catch {
+      parts.push(cleanLatexText(math));
+    }
+    last = re.lastIndex;
+  }
+  if (last < src.length) parts.push(cleanLatexText(src.slice(last)));
+  return parts.join("");
+}
+
+function MultiSelect({ label, options, selected, onChange }: {
+  label: string;
+  options: Array<{ value: string; text: string }>;
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+  const textOf = (value: string) => options.find((o) => o.value === value)?.text ?? value;
+  const summary = selected.length === 0 ? label
+    : selected.length === 1 ? textOf(selected[0])
+    : `${textOf(selected[0])} +${selected.length - 1}`;
+  const toggle = (value: string) => onChange(selected.includes(value) ? selected.filter((v) => v !== value) : [...selected, value]);
+  return (
+    <div className={`multi-select ${open ? "open" : ""}`} ref={ref}>
+      <button className={`multi-trigger ${selected.length ? "has-value" : ""}`} onClick={() => setOpen((o) => !o)} title={label}>
+        <span>{summary}</span>
+        <ChevronDown size={14} />
+      </button>
+      {open && (
+        <div className="multi-popover">
+          {selected.length > 0 && <button className="ms-clear" onClick={() => onChange([])}><X size={12} />清除（{selected.length}）</button>}
+          <div className="ms-options">
+            {options.map((o) => (
+              <label key={o.value} className={`ms-option ${selected.includes(o.value) ? "on" : ""}`}>
+                <input type="checkbox" checked={selected.includes(o.value)} onChange={() => toggle(o.value)} />
+                <span>{o.text}</span>
+                {selected.includes(o.value) && <Check size={14} className="ms-check" />}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BrowseView({ conferences }: { conferences: Array<{ conference: string; year: number; count: number }> }) {
-  const [conference, setConference] = useState("");
-  const [year, setYear] = useState("");
+  const [confs, setConfs] = useState<string[]>([]);
+  const [years, setYears] = useState<string[]>([]);
   const [q, setQ] = useState("");
   const [sort, setSort] = useState("year");
   const [items, setItems] = useState<BrowsePaper[]>([]);
@@ -1282,20 +1364,19 @@ function BrowseView({ conferences }: { conferences: Array<{ conference: string; 
   const [active, setActive] = useState<BrowsePaper | null>(null);
 
   const confOptions = useMemo(
-    () => Array.from(new Set(conferences.map((c) => c.conference))),
+    () => Array.from(new Set(conferences.map((c) => c.conference))).map((c) => ({ value: c, text: c.toUpperCase() })),
     [conferences]
   );
-  const yearOptions = useMemo(
-    () => Array.from(new Set(conferences.filter((c) => !conference || c.conference === conference).map((c) => c.year))).sort((a, b) => b - a),
-    [conferences, conference]
-  );
+  const yearsFor = (confList: string[]) =>
+    Array.from(new Set(conferences.filter((c) => confList.length === 0 || confList.includes(c.conference)).map((c) => c.year))).sort((a, b) => b - a);
+  const yearOptions = useMemo(() => yearsFor(confs).map((y) => ({ value: String(y), text: String(y) })), [conferences, confs]);
 
   const runLoad = async (reset: boolean) => {
     setLoading(true);
     try {
       const res = await browsePapers({
-        conference: conference || undefined,
-        year: year ? Number(year) : undefined,
+        conference: confs.length ? confs.join(",") : undefined,
+        year: years.length ? years.join(",") : undefined,
         q,
         sort,
         limit: BROWSE_LIMIT,
@@ -1315,25 +1396,20 @@ function BrowseView({ conferences }: { conferences: Array<{ conference: string; 
     const timer = setTimeout(() => runLoad(true), q ? 280 : 0);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conference, year, q, sort]);
+  }, [confs, years, q, sort]);
 
-  const onConference = (value: string) => {
-    setConference(value);
-    if (value && year && !conferences.some((c) => c.conference === value && c.year === Number(year))) setYear("");
+  const onConfsChange = (next: string[]) => {
+    setConfs(next);
+    const avail = yearsFor(next).map(String);
+    setYears((prev) => prev.filter((y) => avail.includes(y)));
   };
-  const reset = () => { setConference(""); setYear(""); setQ(""); setSort("year"); };
+  const reset = () => { setConfs([]); setYears([]); setQ(""); setSort("year"); };
 
   return (
     <section className="browse">
       <div className="browse-filters">
-        <select value={conference} onChange={(e) => onConference(e.target.value)} title="会议">
-          <option value="">全部会议</option>
-          {confOptions.map((c) => <option key={c} value={c}>{c.toUpperCase()}</option>)}
-        </select>
-        <select value={year} onChange={(e) => setYear(e.target.value)} title="年份">
-          <option value="">全部年份</option>
-          {yearOptions.map((y) => <option key={y} value={String(y)}>{y}</option>)}
-        </select>
+        <MultiSelect label="全部会议" options={confOptions} selected={confs} onChange={onConfsChange} />
+        <MultiSelect label="全部年份" options={yearOptions} selected={years} onChange={setYears} />
         <div className="search-box browse-search">
           <Search size={14} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索标题 / 摘要 / 作者 / 关键词" />
@@ -1356,7 +1432,7 @@ function BrowseView({ conferences }: { conferences: Array<{ conference: string; 
               {(p.eventtype || p.decision) && <span className="type-badge">{p.eventtype || p.decision}</span>}
               {p.authors && <span className="browse-authors">{p.authors}</span>}
             </div>
-            {p.abstract && <p className="browse-abstract">{p.abstract}</p>}
+            {p.abstract && <p className="browse-abstract" dangerouslySetInnerHTML={{ __html: renderAbstract(p.abstract) }} />}
             {(p.url || p.pdf_url) && (
               <div className="browse-links" onClick={(e) => e.stopPropagation()}>
                 {p.url && <a href={p.url} target="_blank" rel="noreferrer"><ExternalLink size={13} />原文</a>}
@@ -1386,7 +1462,7 @@ function BrowseView({ conferences }: { conferences: Array<{ conference: string; 
             </div>
             {active.authors && <p className="paper-modal-authors">{active.authors}</p>}
             {active.keywords && <p className="paper-modal-keywords">{active.keywords}</p>}
-            <p className="paper-modal-abstract">{active.abstract || "（暂无摘要）"}</p>
+            <p className="paper-modal-abstract" dangerouslySetInnerHTML={{ __html: active.abstract ? renderAbstract(active.abstract) : "（暂无摘要）" }} />
             <div className="browse-links">
               {active.url && <a href={active.url} target="_blank" rel="noreferrer"><ExternalLink size={14} />原文</a>}
               {active.pdf_url && <a href={active.pdf_url} target="_blank" rel="noreferrer"><FileText size={14} />PDF</a>}

@@ -408,22 +408,29 @@ def matches(
 @app.get("/api/papers")
 def browse_papers(
     conference: str | None = None,
-    year: int | None = None,
+    year: str | None = None,
     q: str | None = None,
     eventtype: str | None = None,
     sort: str = "year",
     limit: int = 60,
     offset: int = 0,
 ) -> dict[str, object]:
-    """Browse the full paper库 directly (not recommendation-filtered)."""
+    """Browse the full paper库 directly (not recommendation-filtered).
+
+    ``conference`` and ``year`` accept comma-separated lists for multi-select
+    (e.g. ``conference=cvpr,iccv`` and ``year=2025,2026``).
+    """
     limit = max(1, min(limit, 200))
     offset = max(0, offset)
     where: list[str] = []
     params: list[object] = []
-    if conference:
-        where.append("conference = ?"); params.append(conference)
-    if year:
-        where.append("year = ?"); params.append(year)
+    confs = [c.strip() for c in conference.split(",")] if conference else []
+    confs = [c for c in confs if c]
+    years = [int(y) for y in year.split(",") if y.strip().isdigit()] if year else []
+    if confs:
+        where.append(f"conference IN ({','.join('?' for _ in confs)})"); params.extend(confs)
+    if years:
+        where.append(f"year IN ({','.join('?' for _ in years)})"); params.extend(years)
     if eventtype:
         where.append("eventtype = ?"); params.append(eventtype)
     if q and q.strip():

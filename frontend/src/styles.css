@@ -377,6 +377,24 @@ table.matches, .data-table { width: 100%; border-collapse: collapse; font-size: 
 .browse { display: flex; flex-direction: column; gap: 16px; }
 .browse-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; position: sticky; top: -24px; z-index: 5; background: var(--bg); padding: 8px 0; margin: -8px 0 0; }
 .browse-search { flex: 1; min-width: 240px; }
+
+/* multi-select (会议/年份 多选) */
+.multi-select { position: relative; }
+.multi-trigger { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px 0 12px; border: 1px solid var(--line); border-radius: 7px; background: #fff; color: var(--muted); font-size: 13px; font-weight: 500; white-space: nowrap; transition: border-color .15s; }
+.multi-trigger:hover { border-color: #c7cedb; }
+.multi-trigger.has-value { color: var(--ink); border-color: var(--accent); background: var(--accent-soft); }
+.multi-trigger svg { color: var(--muted); flex-shrink: 0; }
+.multi-select.open .multi-trigger { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.multi-popover { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; min-width: 180px; max-width: 260px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow-lg); padding: 6px; animation: fade-in .12s ease; }
+.ms-clear { display: inline-flex; align-items: center; gap: 5px; width: 100%; padding: 6px 8px; border-radius: 6px; color: var(--muted); font-size: 12px; font-weight: 600; border: none; background: none; }
+.ms-clear:hover { background: var(--line-soft); color: var(--ink); }
+.ms-options { max-height: 280px; overflow: auto; display: flex; flex-direction: column; gap: 1px; }
+.ms-option { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px; font-size: 13px; color: var(--ink-soft); cursor: pointer; user-select: none; }
+.ms-option:hover { background: var(--line-soft); }
+.ms-option.on { color: var(--ink); font-weight: 600; }
+.ms-option input { width: 15px; height: 15px; flex-shrink: 0; accent-color: var(--accent); }
+.ms-option span { flex: 1; }
+.ms-check { color: var(--accent); }
 .search-clear { display: inline-grid; place-items: center; color: var(--muted); background: none; border: none; }
 .search-clear:hover { color: var(--ink); }
 .browse-count { margin-left: auto; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }

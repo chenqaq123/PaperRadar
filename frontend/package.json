@@ -15,11 +15,13 @@
     "dist:dir": "npm run build && electron-builder --config electron-builder.yml --dir"
   },
   "dependencies": {
+    "katex": "^0.16.47",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@types/katex": "^0.16.8",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",
