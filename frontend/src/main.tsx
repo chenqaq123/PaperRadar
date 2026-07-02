@@ -736,7 +736,7 @@ function App() {
                         ))}
                       </section>
                     )}
-                    <section><h3>摘要</h3><ProtectedText as="p" text={selected.abstract || "暂无摘要。"} /></section>
+                    <section><h3>摘要</h3><p className="protected-text notranslate" translate="no" lang="en" dangerouslySetInnerHTML={{ __html: selected.abstract ? renderAbstract(selected.abstract) : "暂无摘要。" }} /></section>
                     <section className="links">
                       {selected.url && <a href={selected.url} target="_blank" rel="noreferrer"><ExternalLink size={14} />会议页面</a>}
                       {selected.pdf_url && <a href={selected.pdf_url} target="_blank" rel="noreferrer"><FileText size={14} />PDF</a>}
