@@ -119,13 +119,20 @@ function waitForBackend(timeoutMs = 60000) {
 }
 
 function createWindow() {
+  const isMac = process.platform === "darwin";
   mainWindow = new BrowserWindow({
     width: 1360,
     height: 900,
     minWidth: 900,
     minHeight: 640,
     title: "Paper Radar",
-    backgroundColor: "#0f1115",
+    // Native macOS chrome: hide the title bar, inline the traffic lights, and
+    // frost the transparent (sidebar) region with vibrancy.
+    titleBarStyle: isMac ? "hiddenInset" : "default",
+    trafficLightPosition: isMac ? { x: 16, y: 20 } : undefined,
+    vibrancy: isMac ? "sidebar" : undefined,
+    visualEffectState: "active",
+    backgroundColor: isMac ? "#00000000" : "#0f1115",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
