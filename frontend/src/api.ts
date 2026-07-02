@@ -1,4 +1,16 @@
-export const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000";
+// In the Electron desktop shell the backend URL is injected via preload
+// (window.paperRadar.apiBase). Fall back to the Vite env / localhost for the
+// plain web build.
+declare global {
+  interface Window {
+    paperRadar?: { apiBase: string; isDesktop: boolean };
+  }
+}
+
+export const API_BASE =
+  (typeof window !== "undefined" && window.paperRadar?.apiBase) ||
+  import.meta.env.VITE_API_BASE ||
+  "http://127.0.0.1:8000";
 
 export type Health = {
   ok: boolean;

@@ -1,6 +1,8 @@
 # Paper Radar
 
-Paper Radar 是一个 local-first 论文雷达 Web App。它把你的 Zotero 研究兴趣和 AI/CS 顶会中稿论文库做匹配，帮你更快找到值得读、值得加入 Zotero、值得参考图表表达的论文。
+> 桌面版(Electron)：现已支持打包为 macOS/Windows/Linux 原生桌面应用,依然 local-first。见 [DESKTOP.md](DESKTOP.md)。开发运行:`./scripts/start_paper_radar_desktop.sh`。
+
+Paper Radar 是一个 local-first 论文雷达应用(桌面版 / Web 版共用同一套前后端)。它把你的 Zotero 研究兴趣和 AI/CS 顶会中稿论文库做匹配，帮你更快找到值得读、值得加入 Zotero、值得参考图表表达的论文。
 
 第一版重点是本地自用和隐私安全：
 

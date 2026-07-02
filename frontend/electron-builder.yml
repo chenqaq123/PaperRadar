@@ -1,0 +1,36 @@
+appId: com.paperradar.desktop
+productName: Paper Radar
+copyright: Paper Radar
+
+directories:
+  output: release
+  buildResources: build
+
+# Self-use build: only the built renderer + electron shell go into the app.
+# The backend is NOT bundled — the app runs it from this machine's repo .venv
+# (paths recorded in electron/local-paths.json). To make a distributable build
+# that bundles Python, re-enable the extraResources block below + PyInstaller.
+files:
+  - dist/**/*
+  - electron/**/*
+  - package.json
+
+# --- Distributable build only (see DESKTOP.md); leave commented for self-use ---
+# extraResources:
+#   - from: ../backend/dist/paper-radar-backend
+#     to: backend
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+    - zip
+
+win:
+  target:
+    - nsis
+
+linux:
+  category: Education
+  target:
+    - AppImage

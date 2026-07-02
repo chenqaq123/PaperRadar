@@ -20,3 +20,10 @@ output/
 *.sqlite-*
 *.log
 .env
+
+# Electron / desktop build artifacts
+frontend/release/
+frontend/electron/local-paths.json
+backend/build/
+backend/dist/
+backend/*.spec
