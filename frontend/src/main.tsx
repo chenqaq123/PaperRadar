@@ -63,14 +63,19 @@ type ToastKind = "info" | "success" | "error";
 type Toast = { id: number; kind: ToastKind; text: string };
 
 const STORAGE_KEY = "paper-radar-ui-v3";
-const NAV: Array<{ view: View; label: string; icon: React.ReactNode }> = [
-  { view: "recommendations", label: "推荐", icon: <Sparkles size={18} /> },
-  { view: "queue", label: "阅读队列", icon: <BookmarkCheck size={18} /> },
-  { view: "figures", label: "图表", icon: <ImageIcon size={18} /> },
-  { view: "profiles", label: "研究方向", icon: <Brain size={18} /> },
-  { view: "data", label: "数据与导入", icon: <Database size={18} /> },
-  { view: "settings", label: "设置", icon: <Settings size={18} /> }
+const NAV: Array<{ view: View; label: string; icon: React.ReactNode; group: string }> = [
+  { view: "recommendations", label: "推荐", icon: <Sparkles size={17} />, group: "工作区" },
+  { view: "queue", label: "阅读队列", icon: <BookmarkCheck size={17} />, group: "工作区" },
+  { view: "figures", label: "图表", icon: <ImageIcon size={17} />, group: "工作区" },
+  { view: "profiles", label: "研究方向", icon: <Brain size={17} />, group: "资料库" },
+  { view: "data", label: "数据与导入", icon: <Database size={17} />, group: "资料库" },
+  { view: "settings", label: "设置", icon: <Settings size={17} />, group: "资料库" }
 ];
+
+const NAV_GROUPS: string[] = NAV.reduce<string[]>((groups, item) => {
+  if (!groups.includes(item.group)) groups.push(item.group);
+  return groups;
+}, []);
 
 function readUiState() {
   try {
@@ -547,14 +552,19 @@ function App() {
           </div>
         </div>
         <nav>
-          {NAV.map((item) => (
-            <button
-              key={item.view}
-              className={view === item.view ? "active" : ""}
-              onClick={() => item.view === "recommendations" ? openRecommendations() : item.view === "queue" ? openQueue() : setView(item.view)}
-            >
-              {item.icon}<span>{item.label}</span>
-            </button>
+          {NAV_GROUPS.map((group) => (
+            <div className="nav-group" key={group}>
+              <p className="nav-group-title">{group}</p>
+              {NAV.filter((item) => item.group === group).map((item) => (
+                <button
+                  key={item.view}
+                  className={view === item.view ? "active" : ""}
+                  onClick={() => item.view === "recommendations" ? openRecommendations() : item.view === "queue" ? openQueue() : setView(item.view)}
+                >
+                  {item.icon}<span>{item.label}</span>
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
         <div className="side-metrics">

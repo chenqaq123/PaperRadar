@@ -6,7 +6,7 @@
 //   2. Wait for the backend /api/health endpoint to answer.
 //   3. Create the BrowserWindow (dev: Vite dev server, prod: built dist).
 //   4. Tear the backend down cleanly on quit.
-const { app, BrowserWindow, shell } = require("electron");
+const { app, BrowserWindow, shell, screen } = require("electron");
 const { spawn } = require("node:child_process");
 const http = require("node:http");
 const path = require("node:path");
@@ -118,21 +118,57 @@ function waitForBackend(timeoutMs = 60000) {
   });
 }
 
+const WINDOW_STATE_FILE = () => path.join(app.getPath("userData"), "window-state.json");
+const DEFAULT_BOUNDS = { width: 1360, height: 900 };
+
+function loadWindowState() {
+  try {
+    const state = JSON.parse(fs.readFileSync(WINDOW_STATE_FILE(), "utf8"));
+    // Only restore the saved position if it still lands on a connected display.
+    if (
+      typeof state.x === "number" &&
+      typeof state.y === "number" &&
+      !screen.getAllDisplays().some((d) => {
+        const w = d.workArea;
+        return state.x < w.x + w.width && state.x + (state.width || 0) > w.x && state.y < w.y + w.height && state.y + (state.height || 0) > w.y;
+      })
+    ) {
+      delete state.x;
+      delete state.y;
+    }
+    return state;
+  } catch {
+    return {};
+  }
+}
+
+function saveWindowState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const bounds = mainWindow.getNormalBounds(); // excludes maximized/fullscreen
+  const state = { ...bounds, isMaximized: mainWindow.isMaximized(), isFullScreen: mainWindow.isFullScreen() };
+  try {
+    fs.writeFileSync(WINDOW_STATE_FILE(), JSON.stringify(state));
+  } catch (err) {
+    log("failed to save window state:", err.message);
+  }
+}
+
 function createWindow() {
   const isMac = process.platform === "darwin";
+  const saved = loadWindowState();
   mainWindow = new BrowserWindow({
-    width: 1360,
-    height: 900,
+    width: saved.width || DEFAULT_BOUNDS.width,
+    height: saved.height || DEFAULT_BOUNDS.height,
+    x: saved.x,
+    y: saved.y,
     minWidth: 900,
     minHeight: 640,
     title: "Paper Radar",
-    // Native macOS chrome: hide the title bar, inline the traffic lights, and
-    // frost the transparent (sidebar) region with vibrancy.
+    // Native macOS chrome: hide the title bar and inline the traffic lights.
+    // Solid backgrounds (no vibrancy) per preference.
     titleBarStyle: isMac ? "hiddenInset" : "default",
     trafficLightPosition: isMac ? { x: 16, y: 20 } : undefined,
-    vibrancy: isMac ? "sidebar" : undefined,
-    visualEffectState: "active",
-    backgroundColor: isMac ? "#00000000" : "#0f1115",
+    backgroundColor: "#e9eaef",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -140,6 +176,19 @@ function createWindow() {
       additionalArguments: [`--paper-radar-api-base=${BACKEND_URL}`],
     },
   });
+
+  if (saved.isMaximized) mainWindow.maximize();
+  if (saved.isFullScreen) mainWindow.setFullScreen(true);
+
+  // Persist size/position as they change (debounced) and on close.
+  let saveTimer = null;
+  const scheduleSave = () => {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveWindowState, 400);
+  };
+  mainWindow.on("resize", scheduleSave);
+  mainWindow.on("move", scheduleSave);
+  mainWindow.on("close", saveWindowState);
 
   // Open external links in the system browser, keep app navigation in-window.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
