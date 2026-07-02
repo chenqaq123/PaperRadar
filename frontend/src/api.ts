@@ -276,6 +276,42 @@ export function exportMatchesUrl(): string {
   return `${API_BASE}/api/export/matches.csv`;
 }
 
+export type BrowsePaper = {
+  id: number;
+  external_id: string;
+  title: string;
+  abstract: string;
+  authors: string;
+  conference: string;
+  year: number;
+  decision: string;
+  eventtype: string;
+  topic: string;
+  keywords: string;
+  url: string;
+  pdf_url: string;
+};
+
+export async function browsePapers(params: {
+  conference?: string;
+  year?: number;
+  q?: string;
+  eventtype?: string;
+  sort?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{ items: BrowsePaper[]; total: number; limit: number; offset: number }> {
+  const search = new URLSearchParams();
+  if (params.conference) search.set("conference", params.conference);
+  if (params.year) search.set("year", String(params.year));
+  if (params.q && params.q.trim()) search.set("q", params.q.trim());
+  if (params.eventtype) search.set("eventtype", params.eventtype);
+  if (params.sort) search.set("sort", params.sort);
+  search.set("limit", String(params.limit ?? 60));
+  search.set("offset", String(params.offset ?? 0));
+  return parseResponse(await fetch(`${API_BASE}/api/papers?${search}`));
+}
+
 export type FigurePaper = {
   paper_id: number;
   title: string;

@@ -370,3 +370,39 @@ table.matches, .data-table { width: 100%; border-collapse: collapse; font-size: 
 .platform-darwin .topbar a,
 .platform-darwin .topbar input,
 .platform-darwin .topbar select { -webkit-app-region: no-drag; }
+
+/* ============================================================
+   浏览论文（browse）：置顶多维筛选 + 单栏卡片流 + 论文弹窗
+   ============================================================ */
+.browse { display: flex; flex-direction: column; gap: 16px; }
+.browse-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; position: sticky; top: -24px; z-index: 5; background: var(--bg); padding: 8px 0; margin: -8px 0 0; }
+.browse-search { flex: 1; min-width: 240px; }
+.search-clear { display: inline-grid; place-items: center; color: var(--muted); background: none; border: none; }
+.search-clear:hover { color: var(--ink); }
+.browse-count { margin-left: auto; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+
+.browse-list { display: flex; flex-direction: column; gap: 12px; }
+.browse-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 15px 18px; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.browse-card:hover { border-color: #c7cedb; box-shadow: var(--shadow); }
+.browse-title { font-size: 15px; font-weight: 650; line-height: 1.45; color: var(--ink); margin: 0; }
+.browse-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 9px; }
+.conf-badge { font-size: 11.5px; font-weight: 700; color: var(--accent-ink); background: var(--accent-soft); padding: 2px 8px; border-radius: 999px; letter-spacing: .02em; }
+.type-badge { font-size: 11.5px; font-weight: 600; color: var(--ink-soft); background: var(--line-soft); padding: 2px 8px; border-radius: 999px; }
+.browse-authors { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 52ch; }
+.browse-abstract { margin: 10px 0 0; font-size: 13px; line-height: 1.6; color: var(--ink-soft); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.browse-links { display: flex; gap: 16px; margin-top: 12px; }
+.browse-links a { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 600; color: var(--accent-ink); text-decoration: none; }
+.browse-links a:hover { text-decoration: underline; }
+.browse-empty { text-align: center; color: var(--muted); padding: 56px 0; font-size: 14px; }
+.browse-more { align-self: center; margin-top: 4px; min-width: 200px; justify-content: center; }
+
+.paper-modal-backdrop { position: fixed; inset: 0; z-index: 70; background: rgba(10, 14, 24, 0.5); display: grid; place-items: center; padding: 40px; animation: fade-in .15s ease; }
+.paper-modal { position: relative; background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow-lg); max-width: 760px; width: 100%; max-height: 82vh; overflow: auto; padding: 26px 28px; }
+.paper-modal h2 { font-size: 19px; line-height: 1.4; margin: 0 40px 0 0; color: var(--ink); }
+.paper-modal .browse-meta { margin-top: 12px; }
+.paper-modal-authors { margin: 12px 0 0; font-size: 13px; color: var(--ink-soft); line-height: 1.6; }
+.paper-modal-keywords { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); }
+.paper-modal-abstract { margin: 16px 0 0; font-size: 14px; line-height: 1.75; color: var(--ink); white-space: pre-wrap; }
+.paper-modal .browse-links { margin-top: 20px; }
+.paper-modal-close { position: absolute; top: 16px; right: 16px; width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; color: var(--muted); border: none; background: none; }
+.paper-modal-close:hover { background: var(--line-soft); color: var(--ink); }

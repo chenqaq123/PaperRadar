@@ -13,6 +13,7 @@ import {
   FileText,
   Heart,
   Image as ImageIcon,
+  Library,
   Loader2,
   Maximize2,
   Play,
@@ -27,6 +28,8 @@ import {
 } from "lucide-react";
 import {
   API_BASE,
+  BrowsePaper,
+  browsePapers,
   Match,
   Profile,
   TaskState,
@@ -57,13 +60,14 @@ import {
 } from "./api";
 import "./styles.css";
 
-type View = "recommendations" | "queue" | "figures" | "profiles" | "data" | "settings";
+type View = "browse" | "recommendations" | "queue" | "figures" | "profiles" | "data" | "settings";
 type FeedbackAction = "want_to_read" | "read" | "relevant" | "not_relevant" | "hide";
 type ToastKind = "info" | "success" | "error";
 type Toast = { id: number; kind: ToastKind; text: string };
 
 const STORAGE_KEY = "paper-radar-ui-v3";
 const NAV: Array<{ view: View; label: string; icon: React.ReactNode; group: string }> = [
+  { view: "browse", label: "浏览论文", icon: <Library size={17} />, group: "工作区" },
   { view: "recommendations", label: "推荐", icon: <Sparkles size={17} />, group: "工作区" },
   { view: "queue", label: "阅读队列", icon: <BookmarkCheck size={17} />, group: "工作区" },
   { view: "figures", label: "图表", icon: <ImageIcon size={17} />, group: "工作区" },
@@ -87,7 +91,7 @@ function readUiState() {
 
 function App() {
   const savedUi = useMemo(() => readUiState(), []);
-  const [view, setView] = useState<View>(savedUi.view ?? "recommendations");
+  const [view, setView] = useState<View>(savedUi.view ?? "browse");
   const [health, setHealth] = useState({ zotero_items: 0, zotero_abstracts: 0, conference_papers: 0, profiles: 0, match_runs: 0, conferences: [] as Array<{ conference: string; year: number; count: number }> });
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
@@ -191,7 +195,7 @@ function App() {
           });
           setMatches(items);
           setSelected(items[0] ?? null);
-          setView(savedUi.view ?? "recommendations");
+          setView(savedUi.view ?? "browse");
         } else if (nextHealth.zotero_items === 0 || nextHealth.conference_papers === 0) {
           setView("data");
           pushToast("先在「数据与导入」里导入 Zotero 和会议论文。", "info");
@@ -592,6 +596,8 @@ function App() {
         {busy && <div className="top-progress"><div style={{ width: `${task?.percent || 12}%` }} /></div>}
 
         <div className="view-area">
+          {view === "browse" && <BrowseView conferences={health.conferences} />}
+
           {(view === "recommendations" || view === "queue") && (
             <section className="rec-layout">
               <div className="results-pane">
@@ -1263,6 +1269,135 @@ function Metric({ label, value }: { label: string; value: number }) {
   return <div className="metric"><span>{label}</span><strong>{value}</strong></div>;
 }
 
+const BROWSE_LIMIT = 60;
+
+function BrowseView({ conferences }: { conferences: Array<{ conference: string; year: number; count: number }> }) {
+  const [conference, setConference] = useState("");
+  const [year, setYear] = useState("");
+  const [q, setQ] = useState("");
+  const [sort, setSort] = useState("year");
+  const [items, setItems] = useState<BrowsePaper[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [active, setActive] = useState<BrowsePaper | null>(null);
+
+  const confOptions = useMemo(
+    () => Array.from(new Set(conferences.map((c) => c.conference))),
+    [conferences]
+  );
+  const yearOptions = useMemo(
+    () => Array.from(new Set(conferences.filter((c) => !conference || c.conference === conference).map((c) => c.year))).sort((a, b) => b - a),
+    [conferences, conference]
+  );
+
+  const runLoad = async (reset: boolean) => {
+    setLoading(true);
+    try {
+      const res = await browsePapers({
+        conference: conference || undefined,
+        year: year ? Number(year) : undefined,
+        q,
+        sort,
+        limit: BROWSE_LIMIT,
+        offset: reset ? 0 : items.length
+      });
+      setTotal(res.total);
+      setItems((prev) => (reset ? res.items : [...prev, ...res.items]));
+    } catch {
+      if (reset) { setItems([]); setTotal(0); }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Reload from the top whenever a filter changes (debounced for typing).
+  useEffect(() => {
+    const timer = setTimeout(() => runLoad(true), q ? 280 : 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conference, year, q, sort]);
+
+  const onConference = (value: string) => {
+    setConference(value);
+    if (value && year && !conferences.some((c) => c.conference === value && c.year === Number(year))) setYear("");
+  };
+  const reset = () => { setConference(""); setYear(""); setQ(""); setSort("year"); };
+
+  return (
+    <section className="browse">
+      <div className="browse-filters">
+        <select value={conference} onChange={(e) => onConference(e.target.value)} title="会议">
+          <option value="">全部会议</option>
+          {confOptions.map((c) => <option key={c} value={c}>{c.toUpperCase()}</option>)}
+        </select>
+        <select value={year} onChange={(e) => setYear(e.target.value)} title="年份">
+          <option value="">全部年份</option>
+          {yearOptions.map((y) => <option key={y} value={String(y)}>{y}</option>)}
+        </select>
+        <div className="search-box browse-search">
+          <Search size={14} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索标题 / 摘要 / 作者 / 关键词" />
+          {q && <button className="search-clear" onClick={() => setQ("")} title="清除搜索"><X size={13} /></button>}
+        </div>
+        <select value={sort} onChange={(e) => setSort(e.target.value)} title="排序">
+          <option value="year">按年份（新→旧）</option>
+          <option value="title">按标题（A→Z）</option>
+        </select>
+        <button className="soft sm" onClick={reset} title="重置筛选"><RefreshCw size={14} />重置</button>
+        <span className="browse-count">{loading && items.length === 0 ? "加载中…" : `共 ${total.toLocaleString()} 篇`}</span>
+      </div>
+
+      <div className="browse-list">
+        {items.map((p) => (
+          <article className="browse-card" key={p.id} onClick={() => setActive(p)}>
+            <h3 className="browse-title notranslate" translate="no">{p.title}</h3>
+            <div className="browse-meta">
+              <span className="conf-badge">{p.conference.toUpperCase()} {p.year}</span>
+              {(p.eventtype || p.decision) && <span className="type-badge">{p.eventtype || p.decision}</span>}
+              {p.authors && <span className="browse-authors">{p.authors}</span>}
+            </div>
+            {p.abstract && <p className="browse-abstract">{p.abstract}</p>}
+            {(p.url || p.pdf_url) && (
+              <div className="browse-links" onClick={(e) => e.stopPropagation()}>
+                {p.url && <a href={p.url} target="_blank" rel="noreferrer"><ExternalLink size={13} />原文</a>}
+                {p.pdf_url && <a href={p.pdf_url} target="_blank" rel="noreferrer"><FileText size={13} />PDF</a>}
+              </div>
+            )}
+          </article>
+        ))}
+        {!loading && items.length === 0 && (
+          <div className="browse-empty">没有符合条件的论文，换个会议 / 年份 / 关键词试试。</div>
+        )}
+        {items.length > 0 && items.length < total && (
+          <button className="soft browse-more" onClick={() => runLoad(false)} disabled={loading}>
+            {loading ? <><Loader2 size={15} className="spin" />加载中…</> : <>加载更多（{items.length}/{total.toLocaleString()}）</>}
+          </button>
+        )}
+      </div>
+
+      {active && (
+        <div className="paper-modal-backdrop" onClick={() => setActive(null)}>
+          <div className="paper-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="paper-modal-close" onClick={() => setActive(null)} title="关闭"><X size={18} /></button>
+            <h2 className="notranslate" translate="no">{active.title}</h2>
+            <div className="browse-meta">
+              <span className="conf-badge">{active.conference.toUpperCase()} {active.year}</span>
+              {(active.eventtype || active.decision) && <span className="type-badge">{active.eventtype || active.decision}</span>}
+            </div>
+            {active.authors && <p className="paper-modal-authors">{active.authors}</p>}
+            {active.keywords && <p className="paper-modal-keywords">{active.keywords}</p>}
+            <p className="paper-modal-abstract">{active.abstract || "（暂无摘要）"}</p>
+            <div className="browse-links">
+              {active.url && <a href={active.url} target="_blank" rel="noreferrer"><ExternalLink size={14} />原文</a>}
+              {active.pdf_url && <a href={active.pdf_url} target="_blank" rel="noreferrer"><FileText size={14} />PDF</a>}
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function Card({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return <section className="card"><div className="card-head">{icon}<h2>{title}</h2></div><div className="card-body">{children}</div></section>;
 }
@@ -1385,10 +1520,11 @@ function figurePaperRank(paper: FigurePaper) {
   return oralRank * 10_000 + pdfRank * 1_000 + paper.paper_id;
 }
 function titleFor(view: View) {
-  return { recommendations: "推荐列表", queue: "阅读队列", figures: "图表学习", profiles: "研究方向", data: "数据与导入", settings: "设置" }[view];
+  return { browse: "浏览论文", recommendations: "推荐列表", queue: "阅读队列", figures: "图表学习", profiles: "研究方向", data: "数据与导入", settings: "设置" }[view];
 }
 function subtitleFor(view: View) {
   return {
+    browse: "直接按会议 / 年份 / 关键词翻阅全库论文，点开任意一篇看摘要与原文。",
     recommendations: "按研究方向或临时兴趣浏览推荐论文，勾选后可一键加入 Zotero。",
     queue: "按想读 / 已读 / 相关 / 隐藏管理你的阅读队列。",
     figures: "选会议 / 年份 / 类型，点开某篇即时抽取 PDF 里的配图供你学习排版与可视化。",

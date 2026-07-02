@@ -405,6 +405,45 @@ def matches(
     return {"items": items}
 
 
+@app.get("/api/papers")
+def browse_papers(
+    conference: str | None = None,
+    year: int | None = None,
+    q: str | None = None,
+    eventtype: str | None = None,
+    sort: str = "year",
+    limit: int = 60,
+    offset: int = 0,
+) -> dict[str, object]:
+    """Browse the full paper库 directly (not recommendation-filtered)."""
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+    where: list[str] = []
+    params: list[object] = []
+    if conference:
+        where.append("conference = ?"); params.append(conference)
+    if year:
+        where.append("year = ?"); params.append(year)
+    if eventtype:
+        where.append("eventtype = ?"); params.append(eventtype)
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        where.append("(title LIKE ? OR abstract LIKE ? OR authors LIKE ? OR keywords LIKE ?)")
+        params.extend([like, like, like, like])
+    clause = (" WHERE " + " AND ".join(where)) if where else ""
+    order = {"year": "year DESC, id DESC", "title": "title COLLATE NOCASE ASC"}.get(sort, "year DESC, id DESC")
+    # Explicit columns so the huge embedding blob never crosses the wire.
+    cols = "id, external_id, title, abstract, authors, conference, year, decision, eventtype, topic, keywords, url, pdf_url"
+    with connect() as conn:
+        init_db(conn)
+        total = conn.execute(f"SELECT COUNT(*) AS c FROM conference_papers{clause}", params).fetchone()["c"]
+        rows = conn.execute(
+            f"SELECT {cols} FROM conference_papers{clause} ORDER BY {order} LIMIT ? OFFSET ?",
+            [*params, limit, offset],
+        ).fetchall()
+    return {"items": [row_to_dict(r) for r in rows], "total": total, "limit": limit, "offset": offset}
+
+
 @app.get("/api/papers/{paper_id}")
 def paper_detail(paper_id: int) -> dict[str, object]:
     with connect() as conn:
