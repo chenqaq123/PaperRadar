@@ -126,6 +126,7 @@ function App() {
   const [zoteroCollections, setZoteroCollections] = useState<ZoteroCollection[]>([]);
   const [localZoteroStatus, setLocalZoteroStatus] = useState<{ connector: boolean; local_api: boolean; message: string } | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const [exportIds, setExportIds] = useState<number[]>([]);
   const bootstrapped = useRef(false);
 
   function pushToast(text: string, kind: ToastKind = "info") {
@@ -511,11 +512,12 @@ function App() {
     return status;
   }
 
-  function openExportModal() {
-    if (selectedPaperIds.length === 0) {
+  function openExportModal(ids: number[]) {
+    if (ids.length === 0) {
       pushToast("先在列表里勾选要添加的论文。", "info");
       return;
     }
+    setExportIds(ids);
     setExportOpen(true);
     checkLocalZotero();
     if (zoteroCollections.length === 0) loadZoteroCollections();
@@ -526,7 +528,7 @@ function App() {
       pushToast("先选择一个目标目录。", "info");
       return;
     }
-    const exportingIds = [...selectedPaperIds];
+    const exportingIds = [...exportIds];
     const result = await withBusy(() => exportToLocalZotero(exportingIds, collectionKey), "");
     if (result) {
       const failed = result.failed?.length ?? 0;
@@ -599,7 +601,7 @@ function App() {
         {busy && <div className="top-progress"><div style={{ width: `${task?.percent || 12}%` }} /></div>}
 
         <div className="view-area">
-          {view === "browse" && <BrowseView conferences={health.conferences} />}
+          {view === "browse" && <BrowseView conferences={health.conferences} onAddToZotero={openExportModal} />}
 
           {(view === "recommendations" || view === "queue") && (
             <section className="rec-layout">
@@ -704,7 +706,7 @@ function App() {
                   <div className="action-buttons">
                     <button className="soft sm" onClick={() => setSelectedPaperIds([])} disabled={selectedMatches.length === 0}><X size={14} />清空</button>
                     <button className="soft sm" onClick={exportSelectedPapers} disabled={selectedMatches.length === 0}><Download size={14} />导出 CSV</button>
-                    <button className="primary sm" onClick={openExportModal} disabled={selectedMatches.length === 0}><Database size={14} />添加到 Zotero</button>
+                    <button className="primary sm" onClick={() => openExportModal(selectedPaperIds)} disabled={selectedMatches.length === 0}><Database size={14} />添加到 Zotero</button>
                   </div>
                 </div>
               </div>
@@ -879,7 +881,7 @@ function App() {
               <button className="ghost-btn" onClick={() => setExportOpen(false)}><X size={16} /></button>
             </div>
             <div className="modal-body">
-              <p className="muted">将 <strong>{selectedPaperIds.length}</strong> 篇选中论文写入本机 Zotero 的目标目录。没有 PDF 的论文会自动尝试从 arXiv 匹配并附上 PDF。</p>
+              <p className="muted">将 <strong>{exportIds.length}</strong> 篇选中论文写入本机 Zotero 的目标目录。没有 PDF 的论文会自动尝试从 arXiv 匹配并附上 PDF。</p>
               {selectedMatches.filter(isInZotero).length > 0 && (
                 <div className="status-line"><Check size={14} />其中 {selectedMatches.filter(isInZotero).length} 篇已在 Zotero 库中（重复添加会被识别为「未变化」）。</div>
               )}
@@ -900,7 +902,7 @@ function App() {
               <div>
                 <button className="soft" onClick={() => setExportOpen(false)}>取消</button>
                 <button className="primary" disabled={busy || !collectionKey.trim()} onClick={confirmExport}>
-                  {busy ? <Loader2 size={15} className="spin" /> : <Database size={15} />}添加 {selectedPaperIds.length} 篇
+                  {busy ? <Loader2 size={15} className="spin" /> : <Database size={15} />}添加 {exportIds.length} 篇
                 </button>
               </div>
             </div>
@@ -1353,7 +1355,7 @@ function MultiSelect({ label, options, selected, onChange }: {
   );
 }
 
-function BrowseView({ conferences }: { conferences: Array<{ conference: string; year: number; count: number }> }) {
+function BrowseView({ conferences, onAddToZotero }: { conferences: Array<{ conference: string; year: number; count: number }>; onAddToZotero: (ids: number[]) => void }) {
   const [confs, setConfs] = useState<string[]>([]);
   const [years, setYears] = useState<string[]>([]);
   const [q, setQ] = useState("");
@@ -1362,6 +1364,19 @@ function BrowseView({ conferences }: { conferences: Array<{ conference: string; 
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [active, setActive] = useState<BrowsePaper | null>(null);
+  const [sel, setSel] = useState<Set<number>>(new Set());
+
+  const toggleSel = (id: number) => setSel((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const exportCsv = () => {
+    const chosen = items.filter((p) => sel.has(p.id));
+    const rows = chosen.map((p) => ({ 标题: p.title, 作者: p.authors, 会议: p.conference.toUpperCase(), 年份: p.year, 类型: p.eventtype || p.decision, URL: p.url, PDF: p.pdf_url }));
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadTextFile(`paper-radar-browse-${stamp}.csv`, `﻿${csvFromRows(rows)}`, "text/csv;charset=utf-8");
+  };
 
   const confOptions = useMemo(
     () => Array.from(new Set(conferences.map((c) => c.conference))).map((c) => ({ value: c, text: c.toUpperCase() })),
@@ -1425,8 +1440,13 @@ function BrowseView({ conferences }: { conferences: Array<{ conference: string; 
 
       <div className="browse-list">
         {items.map((p) => (
-          <article className="browse-card" key={p.id} onClick={() => setActive(p)}>
-            <h3 className="browse-title notranslate" translate="no">{p.title}</h3>
+          <article className={`browse-card ${sel.has(p.id) ? "selected" : ""}`} key={p.id} onClick={() => setActive(p)}>
+            <div className="browse-card-top">
+              <input type="checkbox" checked={sel.has(p.id)} aria-label={`选择 ${p.title}`}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => { e.stopPropagation(); toggleSel(p.id); }} />
+              <h3 className="browse-title notranslate" translate="no">{p.title}</h3>
+            </div>
             <div className="browse-meta">
               <span className="conf-badge">{p.conference.toUpperCase()} {p.year}</span>
               {(p.eventtype || p.decision) && <span className="type-badge">{p.eventtype || p.decision}</span>}
@@ -1451,6 +1471,17 @@ function BrowseView({ conferences }: { conferences: Array<{ conference: string; 
         )}
       </div>
 
+      {sel.size > 0 && (
+        <div className="browse-actionbar">
+          <span className="action-hint">已选 {sel.size} 篇</span>
+          <div className="browse-actions">
+            <button className="soft sm" onClick={() => setSel(new Set())}><X size={14} />清空</button>
+            <button className="soft sm" onClick={exportCsv}><Download size={14} />导出 CSV</button>
+            <button className="primary sm" onClick={() => onAddToZotero(Array.from(sel))}><Database size={14} />添加到 Zotero</button>
+          </div>
+        </div>
+      )}
+
       {active && (
         <div className="paper-modal-backdrop" onClick={() => setActive(null)}>
           <div className="paper-modal" onClick={(e) => e.stopPropagation()}>
@@ -1463,9 +1494,12 @@ function BrowseView({ conferences }: { conferences: Array<{ conference: string; 
             {active.authors && <p className="paper-modal-authors">{active.authors}</p>}
             {active.keywords && <p className="paper-modal-keywords">{active.keywords}</p>}
             <p className="paper-modal-abstract" dangerouslySetInnerHTML={{ __html: active.abstract ? renderAbstract(active.abstract) : "（暂无摘要）" }} />
-            <div className="browse-links">
-              {active.url && <a href={active.url} target="_blank" rel="noreferrer"><ExternalLink size={14} />原文</a>}
-              {active.pdf_url && <a href={active.pdf_url} target="_blank" rel="noreferrer"><FileText size={14} />PDF</a>}
+            <div className="paper-modal-foot">
+              <div className="browse-links">
+                {active.url && <a href={active.url} target="_blank" rel="noreferrer"><ExternalLink size={14} />原文</a>}
+                {active.pdf_url && <a href={active.pdf_url} target="_blank" rel="noreferrer"><FileText size={14} />PDF</a>}
+              </div>
+              <button className="primary sm" onClick={() => onAddToZotero([active.id])}><Database size={14} />加入 Zotero</button>
             </div>
           </div>
         </div>
