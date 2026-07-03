@@ -22,6 +22,9 @@ const REPO_ROOT = path.resolve(__dirname, "..", "..");
 
 let backendProcess = null;
 let mainWindow = null;
+// True when we reused a backend that was already listening (e.g. left over from a
+// previous unclean exit) instead of spawning our own — so we don't kill it on quit.
+let reusedBackend = false;
 
 function log(...args) {
   console.log("[paper-radar]", ...args);
@@ -46,6 +49,21 @@ function resolvePython(repoRoot) {
     if (fs.existsSync(candidate)) return candidate;
   }
   return process.platform === "win32" ? "python" : "python3";
+}
+
+// Resolve true if a backend is already answering /api/health on our port.
+function pingBackend() {
+  return new Promise((resolve) => {
+    const req = http.get(`${BACKEND_URL}/api/health`, (res) => {
+      res.resume();
+      resolve(!!res.statusCode && res.statusCode < 500);
+    });
+    req.on("error", () => resolve(false));
+    req.setTimeout(1500, () => {
+      req.destroy();
+      resolve(false);
+    });
+  });
 }
 
 function startBackend() {
@@ -82,7 +100,8 @@ function startBackend() {
 }
 
 function stopBackend() {
-  if (!backendProcess) return;
+  // Never kill a backend we didn't spawn (reused from a previous run).
+  if (reusedBackend || !backendProcess) return;
   log("stopping backend");
   try {
     backendProcess.kill(process.platform === "win32" ? undefined : "SIGTERM");
@@ -209,11 +228,18 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
-  startBackend();
-  try {
-    await waitForBackend();
-  } catch (err) {
-    log("warning:", err.message, "- loading UI anyway");
+  // If a healthy backend is already listening (left over from a previous unclean
+  // exit), reuse it instead of spawning a second one that would fail to bind.
+  if (await pingBackend()) {
+    reusedBackend = true;
+    log("reusing existing backend @", BACKEND_URL);
+  } else {
+    startBackend();
+    try {
+      await waitForBackend();
+    } catch (err) {
+      log("warning:", err.message, "- loading UI anyway");
+    }
   }
   createWindow();
 
