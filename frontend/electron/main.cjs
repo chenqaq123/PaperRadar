@@ -102,13 +102,23 @@ function startBackend() {
 function stopBackend() {
   // Never kill a backend we didn't spawn (reused from a previous run).
   if (reusedBackend || !backendProcess) return;
-  log("stopping backend");
-  try {
-    backendProcess.kill(process.platform === "win32" ? undefined : "SIGTERM");
-  } catch (err) {
-    log("failed to stop backend:", err);
-  }
+  const proc = backendProcess;
   backendProcess = null;
+  log("stopping backend (SIGTERM)");
+  try {
+    proc.kill(process.platform === "win32" ? undefined : "SIGTERM");
+  } catch (err) {
+    log("failed to SIGTERM backend:", err);
+  }
+  // Belt-and-suspenders: if the backend is wedged (e.g. mid-embedding) and
+  // ignores SIGTERM, force-kill it so it can't linger and hold the port.
+  setTimeout(() => {
+    try {
+      proc.kill("SIGKILL");
+    } catch {
+      /* already gone */
+    }
+  }, 2500);
 }
 
 function waitForBackend(timeoutMs = 60000) {
@@ -252,5 +262,25 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-app.on("before-quit", stopBackend);
-process.on("exit", stopBackend);
+// Hold the quit until the backend we spawned has actually died, so it can't be
+// orphaned. Once it exits, we let the (re-entered) quit proceed normally.
+let quitting = false;
+app.on("before-quit", (event) => {
+  if (reusedBackend || !backendProcess || quitting) return;
+  quitting = true;
+  event.preventDefault();
+  const proc = backendProcess;
+  proc.once("exit", () => app.quit());
+  stopBackend();
+});
+// Last resort: if we ever reach hard process exit with the child still alive
+// (only synchronous work runs here), force-kill it.
+process.on("exit", () => {
+  if (!reusedBackend && backendProcess) {
+    try {
+      backendProcess.kill("SIGKILL");
+    } catch {
+      /* already gone */
+    }
+  }
+});
