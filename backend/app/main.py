@@ -434,9 +434,11 @@ def browse_papers(
     if eventtype:
         where.append("eventtype = ?"); params.append(eventtype)
     if q and q.strip():
-        like = f"%{q.strip()}%"
-        where.append("(title LIKE ? OR abstract LIKE ? OR authors LIKE ? OR keywords LIKE ?)")
-        params.extend([like, like, like, like])
+        # 多关键词:按空白拆词,每个词都必须命中(AND),每个词可命中任意字段(OR)。
+        for token in q.split():
+            like = f"%{token}%"
+            where.append("(title LIKE ? OR abstract LIKE ? OR authors LIKE ? OR keywords LIKE ?)")
+            params.extend([like, like, like, like])
     clause = (" WHERE " + " AND ".join(where)) if where else ""
     order = {"year": "year DESC, id DESC", "title": "title COLLATE NOCASE ASC"}.get(sort, "year DESC, id DESC")
     # Explicit columns so the huge embedding blob never crosses the wire.

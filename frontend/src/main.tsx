@@ -1427,7 +1427,7 @@ function BrowseView({ conferences, onAddToZotero }: { conferences: Array<{ confe
         <MultiSelect label="全部年份" options={yearOptions} selected={years} onChange={setYears} />
         <div className="search-box browse-search">
           <Search size={14} />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索标题 / 摘要 / 作者 / 关键词" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="多关键词空格分隔，如 diffusion 3D（需全部命中）" />
           {q && <button className="search-clear" onClick={() => setQ("")} title="清除搜索"><X size={13} /></button>}
         </div>
         <select value={sort} onChange={(e) => setSort(e.target.value)} title="排序">
