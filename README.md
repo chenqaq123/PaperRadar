@@ -1,6 +1,6 @@
 # Paper Radar
 
-> 桌面版(Electron)：现已支持打包为 macOS/Windows/Linux 原生桌面应用,依然 local-first。见 [DESKTOP.md](DESKTOP.md)。开发运行:`./scripts/start_paper_radar_desktop.sh`。
+> **桌面版(Electron)现已是首选用法**:一个原生 macOS/Windows/Linux 应用,双击即用、零命令行,依然 local-first。第一次使用见下方 [第一次使用(桌面版)](#第一次使用桌面版);实现细节见 [DESKTOP.md](DESKTOP.md)。
 
 Paper Radar 是一个 local-first 论文雷达应用(桌面版 / Web 版共用同一套前后端)。它把你的 Zotero 研究兴趣和 AI/CS 顶会中稿论文库做匹配，帮你更快找到值得读、值得加入 Zotero、值得参考图表表达的论文。
 
@@ -28,7 +28,46 @@ Paper Radar 是一个 local-first 论文雷达应用(桌面版 / Web 版共用�
 - Node.js 18+
 - Zotero 桌面端可选，但推荐安装
 
-## 快速启动
+## 第一次使用(桌面版)
+
+> 目标:得到一个可以双击打开的 **Paper Radar.app**,之后再也不用碰命令行。
+> 这一步只需要一次准备(装依赖 + 生成 App),之后每天都是双击图标使用。
+
+**准备环境**(只需装一次):
+
+- Python 3.10+
+- Node.js 18+
+- Zotero 桌面端(可选,但推荐)
+
+**步骤:**
+
+```bash
+# 1. 克隆仓库
+git clone https://github.com/chenqaq123/PaperRadar.git
+cd PaperRadar
+
+# 2. 生成双击就用的 App(自动建 .venv、装前后端依赖并打包)
+cd frontend
+npm install
+npm run app:build
+```
+
+构建完成后,产物在 `frontend/release/mac-arm64/Paper Radar.app`。
+
+```bash
+# 3. 把它拖进「应用程序」,之后从启动台/Dock 双击打开
+cp -R "release/mac-arm64/Paper Radar.app" /Applications/
+```
+
+之后**双击 `Paper Radar` 图标**即可:App 会自动在后台起后端、打开窗口、复用本机 `data/paper_radar.sqlite` 里的数据,退出时自动关闭后端,全程零命令行。
+
+> 说明:该 `.app` 记住的是**这台电脑**的仓库和 `.venv` 路径(写在 `frontend/electron/local-paths.json`),是自用版,不能直接拷给别人。若仓库或 `.venv` 移动了位置,重新跑一次 `npm run app:build` 即可。
+>
+> 想边改代码边调试,用开发模式:`./scripts/start_paper_radar_desktop.sh`(自动建 .venv、装依赖、开 Vite + Electron)。做成可分发安装包见 [DESKTOP.md](DESKTOP.md)。
+
+## Web 版启动(可选)
+
+如果你更想在浏览器里用,同一套前后端也能跑成纯 Web App:
 
 ```bash
 git clone https://github.com/chenqaq123/PaperRadar.git
@@ -37,19 +76,7 @@ chmod +x scripts/start_paper_radar.sh
 ./scripts/start_paper_radar.sh
 ```
 
-启动后打开：
-
-```text
-http://127.0.0.1:5173
-```
-
-后端默认地址：
-
-```text
-http://127.0.0.1:8000
-```
-
-脚本会自动创建 `.venv`、安装后端依赖，并在需要时安装前端依赖。
+启动后打开 `http://127.0.0.1:5173`(后端默认 `http://127.0.0.1:8000`)。脚本会自动创建 `.venv`、安装后端依赖,并在需要时安装前端依赖。
 
 ## 本地 embedding 设置
 
@@ -131,7 +158,16 @@ python scripts/fetch_import_rank_conferences.py --conference cvpr --years 2026 -
 - `acl`
 - `emnlp`
 
-### 3. 推荐列表
+### 3. 浏览论文
+
+打开 App 默认进入「浏览论文」视图,直接翻整个论文库(不依赖 Zotero 推荐):
+
+- 会议、年份都是**多选**,可任意组合(如同时看 CVPR + NeurIPS 的 2025/2026)。
+- 搜索框支持**多关键词**:用空格分隔,要求全部命中(如 `diffusion 3D`),可匹配标题/摘要/作者/关键词。
+- 摘要里的 LaTeX 会正常渲染(公式、`\emph` 等)。
+- 勾选论文后可**导出 CSV**,或直接**加入 Zotero**。
+
+### 4. 推荐列表
 
 推荐列表支持：
 
@@ -151,7 +187,7 @@ python scripts/fetch_import_rank_conferences.py --conference cvpr --years 2026 -
 0.10 * feedback_adjustment
 ```
 
-### 4. 写入 Zotero 目录
+### 5. 写入 Zotero 目录
 
 Paper Radar 可以通过本机 Zotero Connector 把选中的论文添加到 Zotero 已存在目录：
 
@@ -162,7 +198,7 @@ Paper Radar 可以通过本机 Zotero Connector 把选中的论文添加到 Zote
 
 写入时不直接修改本机 `zotero.sqlite`。如果论文没有 PDF 链接，后端会尝试通过 arXiv 匹配 PDF。
 
-### 5. 图表灵感墙
+### 6. 图表灵感墙
 
 「图表」页面用于快速找画图和做表灵感：
 
@@ -239,7 +275,7 @@ output/        抓取产物与分析产物，默认不提交
 
 ### 为什么不做 GitHub Pages 纯前端版？
 
-Paper Radar 需要本地 SQLite、本地 Zotero、PDF 下载与图表抽取、本地 embedding。GitHub Pages 只能托管静态网页，不能稳定运行这些后端能力。因此当前推荐本地 Web App 或 Docker。
+Paper Radar 需要本地 SQLite、本地 Zotero、PDF 下载与图表抽取、本地 embedding。GitHub Pages 只能托管静态网页，不能稳定运行这些后端能力。因此当前推荐桌面版 App(见上文),或本地 Web App / Docker。
 
 ### Zotero 数据会上传吗？
 
