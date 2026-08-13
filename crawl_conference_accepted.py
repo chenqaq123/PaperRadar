@@ -39,8 +39,8 @@ def fetch_text(url: str, timeout: int = 60, retries: int = 3) -> str:
     raise RuntimeError(f"Failed to fetch {url}: {last_error}") from last_error
 
 
-def fetch_json(url: str) -> Dict:
-    return json.loads(fetch_text(url))
+def fetch_json(url: str, timeout: int = 60, retries: int = 3) -> Dict:
+    return json.loads(fetch_text(url, timeout=timeout, retries=retries))
 
 
 def clean_latex(value: str) -> str:
@@ -277,6 +277,50 @@ def discover_cvf_virtual_data_urls(base_url: str, year: int) -> Tuple[str, str]:
     )
 
 
+def discover_miniconf_virtual_data_urls(base_url: str, year: int) -> Tuple[str, str]:
+    papers_page_url = f"{base_url}/virtual/{year}/papers.html"
+    html = fetch_text(papers_page_url, timeout=120)
+    match = re.search(
+        r'start\(\s*"(?P<papers>[^"]+\.json)"\s*,\s*(?:true|false)\s*,\s*"(?P<abstracts>[^"]+\.json)"',
+        html,
+        flags=re.DOTALL,
+    )
+    if not match:
+        raise RuntimeError(
+            f"Could not locate virtual papers/abstracts JSON endpoints in {papers_page_url}. "
+            "The conference page structure may have changed."
+        )
+    return (
+        urljoin(base_url, match.group("papers")),
+        urljoin(base_url, match.group("abstracts")),
+    )
+
+
+def fetch_paginated_virtual_results(url: str, max_papers: int | None = None) -> List[Dict]:
+    results: List[Dict] = []
+    next_url = url
+    total: int | None = None
+    while next_url:
+        if next_url.startswith("http://"):
+            next_url = "https://" + next_url[len("http://") :]
+        payload = fetch_json(next_url, timeout=120, retries=3)
+        page = payload.get("results", []) if isinstance(payload, dict) else []
+        if total is None and isinstance(payload, dict):
+            total = payload.get("count")
+        if max_papers:
+            remaining = max_papers - len(results)
+            if remaining <= 0:
+                break
+            page = page[:remaining]
+        results.extend(page)
+        if max_papers and len(results) >= max_papers:
+            break
+        next_url = payload.get("next") if isinstance(payload, dict) else None
+        if next_url and (len(results) == 0 or len(results) % 1000 == 0):
+            print(f"[virtual] Papers fetched: {len(results)}/{total or '?'}")
+    return results
+
+
 def normalize_paper(base_url: str, raw: Dict, abstract_map: Dict[str, str]) -> Dict:
     authors = raw.get("authors") or []
     author_names = [item.get("fullname", "").strip() for item in authors if item.get("fullname")]
@@ -284,7 +328,14 @@ def normalize_paper(base_url: str, raw: Dict, abstract_map: Dict[str, str]) -> D
     paper_id = str(raw.get("id"))
     abstract = raw.get("abstract") or abstract_map.get(paper_id) or ""
     virtualsite_url = raw.get("virtualsite_url") or ""
-    pdf_url = raw.get("paper_pdf_url") or raw.get("paper_url") or ""
+    pdf_url = raw.get("paper_pdf_url") or ""
+    fallback_paper_url = raw.get("paper_url") or raw.get("url") or ""
+    if not pdf_url and (
+        fallback_paper_url.endswith(".pdf")
+        or "/pdf?" in fallback_paper_url
+        or "openreview.net/pdf" in fallback_paper_url
+    ):
+        pdf_url = fallback_paper_url
 
     return {
         "id": raw.get("id"),
@@ -302,6 +353,163 @@ def normalize_paper(base_url: str, raw: Dict, abstract_map: Dict[str, str]) -> D
         "paper_pdf_url": urljoin(base_url, pdf_url) if pdf_url.startswith("/") else pdf_url,
         "abstract": abstract,
     }
+
+
+def fetch_miniconf_virtual_papers(
+    base_url: str,
+    display_name: str,
+    year: int,
+    workers: int = 100,
+    max_papers: int | None = None,
+    prefer_html: bool = False,
+) -> Tuple[List[Dict], str]:
+    if prefer_html:
+        papers = fetch_miniconf_html_papers(base_url, display_name, year, workers=workers, max_papers=max_papers)
+        return papers, f"Virtual papers page: {base_url}/virtual/{year}/papers.html"
+    papers_url, abstracts_url = discover_miniconf_virtual_data_urls(base_url, year)
+    try:
+        raw_papers = fetch_paginated_virtual_results(papers_url, max_papers=max_papers)
+        try:
+            abstracts_payload = fetch_json(abstracts_url, timeout=240, retries=3)
+        except Exception as exc:
+            print(f"[warn] Could not fetch abstracts JSON ({exc}); using abstracts embedded in papers JSON when available.")
+            abstracts_payload = {}
+        abstract_map = {
+            str(key): value
+            for key, value in (abstracts_payload.items() if isinstance(abstracts_payload, dict) else [])
+        }
+        papers = [normalize_paper(base_url, item, abstract_map) for item in raw_papers]
+        print(f"[virtual] Discovered {len(papers)} papers for {display_name} {year}")
+        return papers, f"Discovered papers JSON: {papers_url}\nDiscovered abstracts JSON: {abstracts_url}"
+    except Exception as exc:
+        print(f"[warn] Paginated virtual JSON failed for {display_name} {year}: {exc}")
+        print("[warn] Falling back to public virtual HTML pages.")
+        papers = fetch_miniconf_html_papers(base_url, display_name, year, workers=workers, max_papers=max_papers)
+        return papers, f"Virtual papers page: {base_url}/virtual/{year}/papers.html"
+
+
+def _eventtype_from_virtual_path(path: str) -> str:
+    match = re.search(r"/virtual/\d+/(?P<kind>poster|oral|spotlight)/", path, flags=re.IGNORECASE)
+    if not match:
+        return "Paper"
+    return match.group("kind").capitalize()
+
+
+def _openreview_pdf_from_forum(url: str) -> str:
+    match = re.search(r"openreview\.net/forum\?id=([^&#]+)", url)
+    return f"https://openreview.net/pdf?id={match.group(1)}" if match else ""
+
+
+def fetch_miniconf_detail(base_url: str, detail_url: str) -> Dict[str, object]:
+    try:
+        html = fetch_text(detail_url, timeout=45, retries=2)
+    except Exception:
+        return {}
+    title = ""
+    title_match = re.search(r'<h1 class="event-title">\s*(?P<title>.*?)\s*</h1>', html, flags=re.DOTALL | re.IGNORECASE)
+    if title_match:
+        title = strip_tags(title_match.group("title"))
+
+    authors: list[str] = []
+    authors_match = re.search(
+        r"<!--\s*Organizers/Authors\s*-->\s*<div class=\"event-organizers\">\s*(?P<authors>.*?)\s*</div>",
+        html,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    if authors_match:
+        authors = [item.strip() for item in re.split(r"\s*[⋅·]\s*", strip_tags(authors_match.group("authors"))) if item.strip()]
+
+    openreview_url = ""
+    openreview_match = re.search(r'href="(?P<url>https://openreview\.net/forum\?id=[^"]+)"', html)
+    if openreview_match:
+        openreview_url = html_lib.unescape(openreview_match.group("url"))
+
+    abstract = ""
+    abstract_match = re.search(
+        r"<!--\s*Abstract Section\s*-->.*?<div class=\"abstract-text-inner\">\s*(?P<abstract>.*?)\s*</div>",
+        html,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    if abstract_match:
+        abstract = strip_tags(abstract_match.group("abstract"))
+
+    return {
+        "title": title,
+        "authors": authors,
+        "openreview_url": openreview_url,
+        "paper_pdf_url": _openreview_pdf_from_forum(openreview_url),
+        "abstract": abstract,
+    }
+
+
+def fetch_miniconf_html_papers(
+    base_url: str,
+    display_name: str,
+    year: int,
+    workers: int = 100,
+    max_papers: int | None = None,
+) -> List[Dict]:
+    papers_page_url = f"{base_url}/virtual/{year}/papers.html"
+    html = fetch_text(papers_page_url, timeout=120, retries=3)
+    pattern = re.compile(
+        rf'<li>\s*<a href="(?P<href>/virtual/{year}/(?P<kind>poster|oral|spotlight)/(?P<id>\d+))">\s*(?P<title>.*?)\s*</a>\s*</li>',
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    entries: list[dict] = []
+    seen: set[str] = set()
+    for index, match in enumerate(pattern.finditer(html), start=1):
+        paper_id = match.group("id")
+        if paper_id in seen:
+            continue
+        seen.add(paper_id)
+        href = match.group("href")
+        eventtype = _eventtype_from_virtual_path(href)
+        detail_url = urljoin(base_url, href)
+        entries.append(
+            {
+                "id": paper_id,
+                "uid": paper_id,
+                "title": strip_tags(match.group("title")),
+                "authors": [],
+                "institutions": [],
+                "decision": "Accept",
+                "eventtype": eventtype,
+                "topic": f"{display_name} {year}",
+                "keywords": [],
+                "sourceurl": papers_page_url,
+                "openreview_group": f"{display_name}.cc/{year}/Conference",
+                "virtualsite_url": detail_url,
+                "paper_pdf_url": "",
+                "abstract": "",
+            }
+        )
+        if max_papers and len(entries) >= max_papers:
+            break
+
+    print(f"[virtual-html] Discovered {len(entries)} paper links from {papers_page_url}")
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as executor:
+        future_to_index = {
+            executor.submit(fetch_miniconf_detail, base_url, entry["virtualsite_url"]): index
+            for index, entry in enumerate(entries)
+        }
+        completed = 0
+        for future in as_completed(future_to_index):
+            index = future_to_index[future]
+            detail = future.result()
+            if detail.get("title"):
+                entries[index]["title"] = detail["title"]
+            if detail.get("authors"):
+                entries[index]["authors"] = detail["authors"]
+            if detail.get("openreview_url"):
+                entries[index]["sourceurl"] = detail["openreview_url"]
+            if detail.get("paper_pdf_url"):
+                entries[index]["paper_pdf_url"] = detail["paper_pdf_url"]
+            if detail.get("abstract"):
+                entries[index]["abstract"] = detail["abstract"]
+            completed += 1
+            if completed == len(entries) or completed % 250 == 0:
+                print(f"[virtual-html] Details fetched: {completed}/{len(entries)}")
+    return entries
 
 
 def strip_tags(value: str) -> str:
@@ -586,6 +794,15 @@ def fetch_acl_anthology_papers(base_url: str, display_name: str, year: int, volu
 def crawl_papers(spec, year: int, detail_workers: int = 12, max_papers: int | None = None) -> Tuple[List[Dict], str]:
     if spec.site_type == "pmlr_bib":
         if year not in spec.pmlr_volumes:
+            if spec.virtual_base_url:
+                return fetch_miniconf_virtual_papers(
+                    spec.virtual_base_url,
+                    spec.display_name,
+                    year,
+                    workers=detail_workers,
+                    max_papers=max_papers,
+                    prefer_html=True,
+                )
             supported = ", ".join(str(item) for item in sorted(spec.pmlr_volumes))
             raise RuntimeError(f"No PMLR volume configured for {spec.display_name} {year}. Supported years: {supported}")
         volume = spec.pmlr_volumes[year]

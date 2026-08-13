@@ -12,6 +12,7 @@ class ConferenceSpec:
     display_name: str
     site_type: str
     base_url: str
+    virtual_base_url: str = ""
     pmlr_volumes: dict[int, int] = field(default_factory=dict)
     anthology_volumes: dict[int, str] = field(default_factory=dict)
 
@@ -46,6 +47,7 @@ CONFERENCE_REGISTRY: dict[str, ConferenceSpec] = {
         display_name="ICML",
         site_type="pmlr_bib",
         base_url="https://proceedings.mlr.press",
+        virtual_base_url="https://icml.cc",
         pmlr_volumes={
             2021: 139,
             2022: 162,
