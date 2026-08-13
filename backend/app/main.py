@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import html as html_lib
 import json
 import os
@@ -132,26 +133,29 @@ def _translate_with_google_cloud(texts: list[str], target: str, source: str | No
     return [html_lib.unescape(item.get("translatedText", "")) for item in translated]
 
 
-def _translate_with_google_web(texts: list[str], target: str, source: str | None) -> list[str]:
-    translated: list[str] = []
-    source_lang = source or "auto"
-    for text in texts:
-        url = "https://translate.googleapis.com/translate_a/single?" + urllib.parse.urlencode(
-            {"client": "gtx", "sl": source_lang, "tl": target, "dt": "t", "q": text}
-        )
-        request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 PaperRadar/0.1"})
-        try:
-            with urllib.request.urlopen(request, timeout=12) as response:
-                data = json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace") or str(exc)
-            raise HTTPException(status_code=exc.code, detail=f"Google 免费翻译接口失败：{detail}") from exc
-        except urllib.error.URLError as exc:
-            raise HTTPException(status_code=502, detail=f"无法连接 Google 免费翻译接口：{exc.reason}") from exc
+def _translate_one_with_google_web(text: str, target: str, source_lang: str) -> str:
+    url = "https://translate.googleapis.com/translate_a/single?" + urllib.parse.urlencode(
+        {"client": "gtx", "sl": source_lang, "tl": target, "dt": "t", "q": text}
+    )
+    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 PaperRadar/0.1"})
+    try:
+        with urllib.request.urlopen(request, timeout=12) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace") or str(exc)
+        raise HTTPException(status_code=exc.code, detail=f"Google 免费翻译接口失败：{detail}") from exc
+    except urllib.error.URLError as exc:
+        raise HTTPException(status_code=502, detail=f"无法连接 Google 免费翻译接口：{exc.reason}") from exc
 
-        parts = data[0] if data and isinstance(data[0], list) else []
-        translated.append(html_lib.unescape("".join(part[0] for part in parts if part and part[0])))
-    return translated
+    parts = data[0] if data and isinstance(data[0], list) else []
+    return html_lib.unescape("".join(part[0] for part in parts if part and part[0]))
+
+
+def _translate_with_google_web(texts: list[str], target: str, source: str | None) -> list[str]:
+    source_lang = source or "auto"
+    workers = min(8, max(1, len(texts)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(lambda text: _translate_one_with_google_web(text, target, source_lang), texts))
 
 
 def _translate_with_google(texts: list[str], target: str, source: str | None, supplied_api_key: str | None) -> list[str]:

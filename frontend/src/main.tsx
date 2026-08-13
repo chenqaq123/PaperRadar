@@ -71,6 +71,7 @@ type ToastKind = "info" | "success" | "error";
 type Toast = { id: number; kind: ToastKind; text: string };
 
 const STORAGE_KEY = "paper-radar-ui-v3";
+const TITLE_TRANSLATION_BATCH_SIZE = 10;
 const NAV: Array<{ view: View; label: string; icon: React.ReactNode; group: string }> = [
   { view: "browse", label: "浏览论文", icon: <Library size={17} />, group: "工作区" },
   { view: "recommendations", label: "推荐", icon: <Sparkles size={17} />, group: "工作区" },
@@ -94,6 +95,12 @@ function readUiState() {
   }
 }
 
+function chunksOf<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
+  return chunks;
+}
+
 function App() {
   const savedUi = useMemo(() => readUiState(), []);
   const [view, setView] = useState<View>(savedUi.view ?? "browse");
@@ -107,6 +114,7 @@ function App() {
   const [showTitleTranslations, setShowTitleTranslations] = useState<boolean>(savedUi.showTitleTranslations ?? false);
   const [titleTranslations, setTitleTranslations] = useState<Record<number, string>>({});
   const [titleTranslationLoading, setTitleTranslationLoading] = useState(false);
+  const [titleTranslationProgress, setTitleTranslationProgress] = useState({ done: 0, total: 0 });
   const [googleTranslateKey, setGoogleTranslateKey] = useState<string>(savedUi.googleTranslateKey ?? "");
   const [profileId, setProfileId] = useState<number | undefined>(savedUi.profileId);
   const [showNoisyProfiles, setShowNoisyProfiles] = useState(false);
@@ -285,24 +293,36 @@ function App() {
     });
     const titles = Array.from(grouped.keys());
     setTitleTranslationLoading(true);
-    translateTitlesGoogle(titles, "zh-CN", googleTranslateKey)
-      .then((translated) => {
-        if (cancelled) return;
-        setTitleTranslations((prev) => {
-          const next = { ...prev };
-          titles.forEach((title, index) => {
-            const zh = translated[index] ?? "";
-            (grouped.get(title) ?? []).forEach((paperId) => { next[paperId] = zh; });
+    setTitleTranslationProgress({ done: 0, total: titles.length });
+    async function translateVisibleTitles() {
+      try {
+        let done = 0;
+        for (const batch of chunksOf(titles, TITLE_TRANSLATION_BATCH_SIZE)) {
+          const translated = await translateTitlesGoogle(batch, "zh-CN", googleTranslateKey);
+          if (cancelled) return;
+          setTitleTranslations((prev) => {
+            const next = { ...prev };
+            batch.forEach((title, index) => {
+              const zh = translated[index] ?? "";
+              (grouped.get(title) ?? []).forEach((paperId) => { next[paperId] = zh; });
+            });
+            return next;
           });
-          return next;
-        });
-      })
-      .catch((error) => pushToast(error.message, "error"))
-      .finally(() => {
-        if (!cancelled) setTitleTranslationLoading(false);
-      });
+          done += batch.length;
+          setTitleTranslationProgress({ done, total: titles.length });
+        }
+      } catch (error) {
+        if (!cancelled) pushToast(error instanceof Error ? error.message : String(error), "error");
+      } finally {
+        if (!cancelled) {
+          setTitleTranslationLoading(false);
+          setTitleTranslationProgress({ done: 0, total: 0 });
+        }
+      }
+    }
+    translateVisibleTitles();
     return () => { cancelled = true; };
-  }, [filteredMatches, googleTranslateKey, showTitleTranslations, titleTranslations, view]);
+  }, [filteredMatches, googleTranslateKey, showTitleTranslations, view]);
   const allVisibleSelected = visiblePaperIds.length > 0 && visiblePaperIds.every((paperId) => selectedPaperIdSet.has(paperId));
   const visibleProfiles = useMemo(
     () => profiles.filter((profile) => showNoisyProfiles || profile.quality !== "noisy"),
@@ -683,7 +703,9 @@ function App() {
                     <button className="soft sm" onClick={clearScope} title="清除会议/年份筛选"><X size={14} />全部</button>
                     <button className={`soft sm ${showTitleTranslations ? "toggle-on" : ""}`} onClick={() => setShowTitleTranslations((value) => !value)} title="用 Google Translate 为当前列表标题显示中文辅助行">
                       {titleTranslationLoading ? <Loader2 size={14} className="spin" /> : <Languages size={14} />}
-                      {showTitleTranslations ? "隐藏中文标题" : "显示中文标题"}
+                      {titleTranslationLoading && titleTranslationProgress.total > 0
+                        ? `翻译 ${titleTranslationProgress.done}/${titleTranslationProgress.total}`
+                        : showTitleTranslations ? "隐藏中文标题" : "显示中文标题"}
                     </button>
                     <button className={`soft sm ${hideInZotero ? "toggle-on" : ""}`} onClick={() => setHideInZotero((value) => !value)} title="隐藏已在 Zotero 库中的论文">
                       <BookmarkCheck size={14} />{hideInZotero ? "显示已在库" : "隐藏已在库"}
@@ -1432,6 +1454,7 @@ function BrowseView({
   const [showTitleTranslations, setShowTitleTranslations] = useState(false);
   const [titleTranslations, setTitleTranslations] = useState<Record<number, string>>({});
   const [titleTranslationLoading, setTitleTranslationLoading] = useState(false);
+  const [titleTranslationProgress, setTitleTranslationProgress] = useState({ done: 0, total: 0 });
 
   const toggleSel = (id: number) => setSel((prev) => {
     const next = new Set(prev);
@@ -1494,24 +1517,36 @@ function BrowseView({
     });
     const titles = Array.from(grouped.keys());
     setTitleTranslationLoading(true);
-    translateTitlesGoogle(titles, "zh-CN", googleTranslateKey)
-      .then((translated) => {
-        if (cancelled) return;
-        setTitleTranslations((prev) => {
-          const next = { ...prev };
-          titles.forEach((title, index) => {
-            const zh = translated[index] ?? "";
-            (grouped.get(title) ?? []).forEach((paperId) => { next[paperId] = zh; });
+    setTitleTranslationProgress({ done: 0, total: titles.length });
+    async function translateVisibleTitles() {
+      try {
+        let done = 0;
+        for (const batch of chunksOf(titles, TITLE_TRANSLATION_BATCH_SIZE)) {
+          const translated = await translateTitlesGoogle(batch, "zh-CN", googleTranslateKey);
+          if (cancelled) return;
+          setTitleTranslations((prev) => {
+            const next = { ...prev };
+            batch.forEach((title, index) => {
+              const zh = translated[index] ?? "";
+              (grouped.get(title) ?? []).forEach((paperId) => { next[paperId] = zh; });
+            });
+            return next;
           });
-          return next;
-        });
-      })
-      .catch((error) => pushToast(error.message, "error"))
-      .finally(() => {
-        if (!cancelled) setTitleTranslationLoading(false);
-      });
+          done += batch.length;
+          setTitleTranslationProgress({ done, total: titles.length });
+        }
+      } catch (error) {
+        if (!cancelled) pushToast(error instanceof Error ? error.message : String(error), "error");
+      } finally {
+        if (!cancelled) {
+          setTitleTranslationLoading(false);
+          setTitleTranslationProgress({ done: 0, total: 0 });
+        }
+      }
+    }
+    translateVisibleTitles();
     return () => { cancelled = true; };
-  }, [googleTranslateKey, items, pushToast, showTitleTranslations, titleTranslations]);
+  }, [googleTranslateKey, items, pushToast, showTitleTranslations]);
 
   const onConfsChange = (next: string[]) => {
     setConfs(next);
@@ -1536,7 +1571,9 @@ function BrowseView({
         </select>
         <button className={`soft sm ${showTitleTranslations ? "toggle-on" : ""}`} onClick={() => setShowTitleTranslations((value) => !value)} title="用 Google Translate 为当前列表标题显示中文辅助行">
           {titleTranslationLoading ? <Loader2 size={14} className="spin" /> : <Languages size={14} />}
-          {showTitleTranslations ? "隐藏中文标题" : "显示中文标题"}
+          {titleTranslationLoading && titleTranslationProgress.total > 0
+            ? `翻译 ${titleTranslationProgress.done}/${titleTranslationProgress.total}`
+            : showTitleTranslations ? "隐藏中文标题" : "显示中文标题"}
         </button>
         <button className="soft sm" onClick={reset} title="重置筛选"><RefreshCw size={14} />重置</button>
         <span className="browse-count">{loading && items.length === 0 ? "加载中…" : `共 ${total.toLocaleString()} 篇`}</span>
