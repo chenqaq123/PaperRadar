@@ -912,11 +912,11 @@ function App() {
                 <button className="soft" onClick={onRebuildEmbeddings}><RefreshCw size={15} />重建 embeddings</button>
               </Card>
               <Card title="标题翻译" icon={<Languages size={17} />}>
-                <p className="muted">Google Translate 只翻译当前列表里展示的论文标题；英文标题始终保留，中文辅助标题不写入数据库。</p>
+                <p className="muted">Google Translate 只翻译当前列表里展示的论文标题；英文标题始终保留，中文辅助标题不写入数据库。默认使用免 key 接口，填 key 后改用官方 Cloud Translation API。</p>
                 <label className="field">Google Translate API Key
-                  <input type="password" value={googleTranslateKey} onChange={(event) => setGoogleTranslateKey(event.target.value)} placeholder="可留空，改用 PAPER_RADAR_GOOGLE_TRANSLATE_API_KEY" />
+                  <input type="password" value={googleTranslateKey} onChange={(event) => setGoogleTranslateKey(event.target.value)} placeholder="可留空：使用免 key 翻译接口" />
                 </label>
-                <p className="muted">这个 key 仅保存在当前浏览器本地，用于调用后端翻译接口。</p>
+                <p className="muted">这个 key 仅保存在当前浏览器本地；不填也可以翻译，但免费接口可能被限流。</p>
               </Card>
               <Card title="后端" icon={<Database size={17} />}>
                 <p className="muted"><strong>API:</strong> {API_BASE}</p>

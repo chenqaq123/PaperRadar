@@ -99,14 +99,14 @@ export PAPER_RADAR_EMBED_BACKEND=fallback
 
 切回真实 embedding 后，在「设置」里点击「重建 embeddings」，再重新排序。
 
-标题翻译是可选功能。若要在论文列表里显示中文辅助标题，可以在「设置 → 标题翻译」里填写 Google Cloud Translation API key；也可以用环境变量：
+标题翻译是可选功能。若要在论文列表里显示中文辅助标题，直接点击列表工具栏里的「显示中文标题」即可。默认使用 Google 的免 key 翻译接口；如果想用更稳定的官方 Cloud Translation API，可以在「设置 → 标题翻译」里填写 API key，也可以用环境变量：
 
 ```bash
 export PAPER_RADAR_GOOGLE_TRANSLATE_API_KEY=你的_key
 ./scripts/start_paper_radar.sh
 ```
 
-翻译结果只用于当前前端展示，不写入 SQLite，也不会修改 Zotero。设置页里的 key 仅保存在当前浏览器本地。
+翻译结果只用于当前前端展示，不写入 SQLite，也不会修改 Zotero。设置页里的 key 仅保存在当前浏览器本地；不填 key 时可能遇到免费接口限流。
 
 ## Docker 启动
 

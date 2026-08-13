@@ -106,21 +106,7 @@ def _raise_db_error(exc: sqlite3.OperationalError) -> None:
     raise HTTPException(status_code=500, detail=message) from exc
 
 
-def _translate_with_google(texts: list[str], target: str, source: str | None, supplied_api_key: str | None) -> list[str]:
-    api_key = (supplied_api_key or os.environ.get("PAPER_RADAR_GOOGLE_TRANSLATE_API_KEY", "")).strip()
-    if not api_key:
-        raise HTTPException(
-            status_code=400,
-            detail="未配置 PAPER_RADAR_GOOGLE_TRANSLATE_API_KEY。请在环境变量里填入 Google Cloud Translation API key 后重启后端。",
-        )
-
-    if not texts:
-        return []
-    if len(texts) > 200:
-        raise HTTPException(status_code=400, detail="一次最多翻译 200 个标题。")
-    if sum(len(text) for text in texts) > 24000:
-        raise HTTPException(status_code=400, detail="当前批次标题过长，请减少一次显示/翻译的数量。")
-
+def _translate_with_google_cloud(texts: list[str], target: str, source: str | None, api_key: str) -> list[str]:
     payload: dict[str, object] = {"q": texts, "target": target, "format": "text"}
     if source:
         payload["source"] = source
@@ -144,6 +130,43 @@ def _translate_with_google(texts: list[str], target: str, source: str | None, su
     if len(translated) != len(texts):
         raise HTTPException(status_code=502, detail="Google Translate 返回数量异常。")
     return [html_lib.unescape(item.get("translatedText", "")) for item in translated]
+
+
+def _translate_with_google_web(texts: list[str], target: str, source: str | None) -> list[str]:
+    translated: list[str] = []
+    source_lang = source or "auto"
+    for text in texts:
+        url = "https://translate.googleapis.com/translate_a/single?" + urllib.parse.urlencode(
+            {"client": "gtx", "sl": source_lang, "tl": target, "dt": "t", "q": text}
+        )
+        request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 PaperRadar/0.1"})
+        try:
+            with urllib.request.urlopen(request, timeout=12) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace") or str(exc)
+            raise HTTPException(status_code=exc.code, detail=f"Google 免费翻译接口失败：{detail}") from exc
+        except urllib.error.URLError as exc:
+            raise HTTPException(status_code=502, detail=f"无法连接 Google 免费翻译接口：{exc.reason}") from exc
+
+        parts = data[0] if data and isinstance(data[0], list) else []
+        translated.append(html_lib.unescape("".join(part[0] for part in parts if part and part[0])))
+    return translated
+
+
+def _translate_with_google(texts: list[str], target: str, source: str | None, supplied_api_key: str | None) -> list[str]:
+    api_key = (supplied_api_key or os.environ.get("PAPER_RADAR_GOOGLE_TRANSLATE_API_KEY", "")).strip()
+
+    if not texts:
+        return []
+    if len(texts) > 200:
+        raise HTTPException(status_code=400, detail="一次最多翻译 200 个标题。")
+    if sum(len(text) for text in texts) > 24000:
+        raise HTTPException(status_code=400, detail="当前批次标题过长，请减少一次显示/翻译的数量。")
+
+    if api_key:
+        return _translate_with_google_cloud(texts, target, source, api_key)
+    return _translate_with_google_web(texts, target, source)
 
 
 @app.on_event("startup")
