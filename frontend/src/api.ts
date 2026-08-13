@@ -262,6 +262,17 @@ export async function getMatches(params: { profileId?: number; conference?: stri
   return payload.items;
 }
 
+export async function translateTitlesGoogle(texts: string[], target = "zh-CN", apiKey = ""): Promise<string[]> {
+  const payload = await parseResponse<{ items: Array<{ source: string; translated: string }> }>(
+    await fetch(`${API_BASE}/api/translate/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ texts, target, source: "en", api_key: apiKey || null })
+    })
+  );
+  return payload.items.map((item) => item.translated);
+}
+
 export async function sendFeedback(paperId: number, profileId: number | null, action: string, note = ""): Promise<void> {
   await parseResponse(
     await fetch(`${API_BASE}/api/feedback`, {

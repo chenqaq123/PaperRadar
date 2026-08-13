@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import html as html_lib
+import json
+import os
 import sqlite3
+import urllib.error
+import urllib.parse
+import urllib.request
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -85,12 +91,59 @@ class ZoteroLocalExportRequest(BaseModel):
     collection_key: str
 
 
+class GoogleTranslateRequest(BaseModel):
+    texts: list[str]
+    target: str = "zh-CN"
+    source: str | None = "en"
+    api_key: str | None = None
+
+
 def _raise_db_error(exc: sqlite3.OperationalError) -> None:
     message = str(exc)
     if "locked" in message.lower():
         detail = "SQLite database is busy. Stop other Paper Radar tasks or wait a moment, then retry."
         raise HTTPException(status_code=503, detail=detail) from exc
     raise HTTPException(status_code=500, detail=message) from exc
+
+
+def _translate_with_google(texts: list[str], target: str, source: str | None, supplied_api_key: str | None) -> list[str]:
+    api_key = (supplied_api_key or os.environ.get("PAPER_RADAR_GOOGLE_TRANSLATE_API_KEY", "")).strip()
+    if not api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="未配置 PAPER_RADAR_GOOGLE_TRANSLATE_API_KEY。请在环境变量里填入 Google Cloud Translation API key 后重启后端。",
+        )
+
+    if not texts:
+        return []
+    if len(texts) > 200:
+        raise HTTPException(status_code=400, detail="一次最多翻译 200 个标题。")
+    if sum(len(text) for text in texts) > 24000:
+        raise HTTPException(status_code=400, detail="当前批次标题过长，请减少一次显示/翻译的数量。")
+
+    payload: dict[str, object] = {"q": texts, "target": target, "format": "text"}
+    if source:
+        payload["source"] = source
+    url = "https://translation.googleapis.com/language/translate/v2?" + urllib.parse.urlencode({"key": api_key})
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json; charset=utf-8", "User-Agent": "PaperRadar/0.1"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace") or str(exc)
+        raise HTTPException(status_code=exc.code, detail=f"Google Translate error: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise HTTPException(status_code=502, detail=f"无法连接 Google Translate：{exc.reason}") from exc
+
+    translated = data.get("data", {}).get("translations", [])
+    if len(translated) != len(texts):
+        raise HTTPException(status_code=502, detail="Google Translate 返回数量异常。")
+    return [html_lib.unescape(item.get("translatedText", "")) for item in translated]
 
 
 @app.on_event("startup")
@@ -135,6 +188,17 @@ def health() -> dict[str, object]:
 @app.get("/api/tasks/current")
 def current_task() -> dict[str, object]:
     return get_task()
+
+
+@app.post("/api/translate/google")
+def google_translate(request: GoogleTranslateRequest) -> dict[str, object]:
+    texts = [text.strip() for text in request.texts if text and text.strip()]
+    translated = _translate_with_google(texts, request.target, request.source, request.api_key)
+    return {
+        "ok": True,
+        "target": request.target,
+        "items": [{"source": source, "translated": target} for source, target in zip(texts, translated)],
+    }
 
 
 @app.post("/api/import/zotero-bibtex")

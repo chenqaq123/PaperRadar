@@ -152,6 +152,7 @@ table.matches, .data-table { width: 100%; border-collapse: collapse; font-size: 
 .protected-text { unicode-bidi: plaintext; white-space: pre-wrap; }
 .paper-cell { display: grid; gap: 5px; min-width: 0; }
 .paper-title { font-weight: 650; line-height: 1.4; color: var(--ink); overflow-wrap: anywhere; }
+.paper-title-zh { font-size: 12.5px; line-height: 1.45; color: var(--ink-soft); overflow-wrap: anywhere; }
 .paper-meta-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .paper-meta { color: var(--muted); font-size: 11.5px; }
 .dir-chip { font-size: 11px; color: var(--ink-soft); background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
@@ -405,8 +406,9 @@ table.matches, .data-table { width: 100%; border-collapse: collapse; font-size: 
 .browse-card.selected { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .browse-card-top { display: flex; align-items: flex-start; gap: 11px; }
 .browse-card-top input[type="checkbox"] { margin-top: 3px; width: 16px; height: 16px; flex-shrink: 0; accent-color: var(--accent); cursor: pointer; }
-.browse-card-top .browse-title { flex: 1; }
+.browse-card-top .browse-title-block { flex: 1; min-width: 0; }
 .browse-title { font-size: 15px; font-weight: 650; line-height: 1.45; color: var(--ink); margin: 0; }
+.browse-title-zh { margin-top: 4px; }
 .browse-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 9px; }
 .conf-badge { font-size: 11.5px; font-weight: 700; color: var(--accent-ink); background: var(--accent-soft); padding: 2px 8px; border-radius: 999px; letter-spacing: .02em; }
 .type-badge { font-size: 11.5px; font-weight: 600; color: var(--ink-soft); background: var(--line-soft); padding: 2px 8px; border-radius: 999px; }

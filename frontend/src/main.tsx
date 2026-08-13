@@ -15,6 +15,7 @@ import {
   Heart,
   Image as ImageIcon,
   Library,
+  Languages,
   Loader2,
   Maximize2,
   Play,
@@ -57,7 +58,8 @@ import {
   rebuildEmbeddings,
   runMatches,
   saveCustomProfile,
-  sendFeedback
+  sendFeedback,
+  translateTitlesGoogle
 } from "./api";
 import katex from "katex";
 import "katex/dist/katex.min.css";
@@ -102,6 +104,10 @@ function App() {
   const [selectedPaperIds, setSelectedPaperIds] = useState<number[]>([]);
   const [addedPaperIds, setAddedPaperIds] = useState<Set<number>>(new Set());
   const [hideInZotero, setHideInZotero] = useState<boolean>(savedUi.hideInZotero ?? false);
+  const [showTitleTranslations, setShowTitleTranslations] = useState<boolean>(savedUi.showTitleTranslations ?? false);
+  const [titleTranslations, setTitleTranslations] = useState<Record<number, string>>({});
+  const [titleTranslationLoading, setTitleTranslationLoading] = useState(false);
+  const [googleTranslateKey, setGoogleTranslateKey] = useState<string>(savedUi.googleTranslateKey ?? "");
   const [profileId, setProfileId] = useState<number | undefined>(savedUi.profileId);
   const [showNoisyProfiles, setShowNoisyProfiles] = useState(false);
   const [conference, setConference] = useState(savedUi.conference ?? "cvpr");
@@ -211,9 +217,9 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ view, profileId, conference, year, matchConference, matchYear, queueAction, limit, collectionKey, hideInZotero })
+      JSON.stringify({ view, profileId, conference, year, matchConference, matchYear, queueAction, limit, collectionKey, hideInZotero, showTitleTranslations, googleTranslateKey })
     );
-  }, [view, profileId, conference, year, matchConference, matchYear, queueAction, limit, collectionKey, hideInZotero]);
+  }, [view, profileId, conference, year, matchConference, matchYear, queueAction, limit, collectionKey, hideInZotero, showTitleTranslations, googleTranslateKey]);
 
   useEffect(() => {
     const available = new Set(matches.map((item) => item.paper_id));
@@ -265,6 +271,38 @@ function App() {
     () => Array.from(new Set(filteredMatches.map((item) => item.paper_id))),
     [filteredMatches]
   );
+  useEffect(() => {
+    if (!showTitleTranslations || (view !== "recommendations" && view !== "queue")) return;
+    const missing = filteredMatches.filter((item) => item.title && !titleTranslations[item.paper_id]).slice(0, 200);
+    if (missing.length === 0) return;
+
+    let cancelled = false;
+    const grouped = new Map<string, number[]>();
+    missing.forEach((item) => {
+      const ids = grouped.get(item.title) ?? [];
+      ids.push(item.paper_id);
+      grouped.set(item.title, ids);
+    });
+    const titles = Array.from(grouped.keys());
+    setTitleTranslationLoading(true);
+    translateTitlesGoogle(titles, "zh-CN", googleTranslateKey)
+      .then((translated) => {
+        if (cancelled) return;
+        setTitleTranslations((prev) => {
+          const next = { ...prev };
+          titles.forEach((title, index) => {
+            const zh = translated[index] ?? "";
+            (grouped.get(title) ?? []).forEach((paperId) => { next[paperId] = zh; });
+          });
+          return next;
+        });
+      })
+      .catch((error) => pushToast(error.message, "error"))
+      .finally(() => {
+        if (!cancelled) setTitleTranslationLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [filteredMatches, googleTranslateKey, showTitleTranslations, titleTranslations, view]);
   const allVisibleSelected = visiblePaperIds.length > 0 && visiblePaperIds.every((paperId) => selectedPaperIdSet.has(paperId));
   const visibleProfiles = useMemo(
     () => profiles.filter((profile) => showNoisyProfiles || profile.quality !== "noisy"),
@@ -601,7 +639,7 @@ function App() {
         {busy && <div className="top-progress"><div style={{ width: `${task?.percent || 12}%` }} /></div>}
 
         <div className="view-area">
-          {view === "browse" && <BrowseView conferences={health.conferences} onAddToZotero={openExportModal} />}
+          {view === "browse" && <BrowseView conferences={health.conferences} onAddToZotero={openExportModal} pushToast={pushToast} googleTranslateKey={googleTranslateKey} />}
 
           {(view === "recommendations" || view === "queue") && (
             <section className="rec-layout">
@@ -643,6 +681,10 @@ function App() {
                     </div>
                     <button className="soft sm" onClick={useLatestScope} title="切到最新会议"><RefreshCw size={14} />最新</button>
                     <button className="soft sm" onClick={clearScope} title="清除会议/年份筛选"><X size={14} />全部</button>
+                    <button className={`soft sm ${showTitleTranslations ? "toggle-on" : ""}`} onClick={() => setShowTitleTranslations((value) => !value)} title="用 Google Translate 为当前列表标题显示中文辅助行">
+                      {titleTranslationLoading ? <Loader2 size={14} className="spin" /> : <Languages size={14} />}
+                      {showTitleTranslations ? "隐藏中文标题" : "显示中文标题"}
+                    </button>
                     <button className={`soft sm ${hideInZotero ? "toggle-on" : ""}`} onClick={() => setHideInZotero((value) => !value)} title="隐藏已在 Zotero 库中的论文">
                       <BookmarkCheck size={14} />{hideInZotero ? "显示已在库" : "隐藏已在库"}
                     </button>
@@ -683,6 +725,11 @@ function App() {
                           <td className="score-col"><ScorePill score={item.score} /></td>
                           <td className="paper-cell notranslate" translate="no">
                             <ProtectedText as="div" className="paper-title" text={item.title} />
+                            {showTitleTranslations && (
+                              <div className="paper-title-zh" translate="yes" lang="zh-CN">
+                                {titleTranslations[item.paper_id] || (titleTranslationLoading ? "中文标题翻译中…" : "中文标题暂不可用")}
+                              </div>
+                            )}
                             <div className="paper-meta-line">
                               <ProtectedText as="span" className="paper-meta" text={`${item.conference.toUpperCase()} ${item.year} · ${item.eventtype || item.decision || "paper"}`} />
                               <span className="dir-chip">{displayProfileName(item.profile_name)}</span>
@@ -863,6 +910,13 @@ function App() {
               <Card title="模型与隐私" icon={<Settings size={17} />}>
                 <p className="muted">Embedding 默认在本机运行（auto：优先 sentence-transformers，不可用时退回本地 fallback 向量器）。LLM 解释当前默认关闭。</p>
                 <button className="soft" onClick={onRebuildEmbeddings}><RefreshCw size={15} />重建 embeddings</button>
+              </Card>
+              <Card title="标题翻译" icon={<Languages size={17} />}>
+                <p className="muted">Google Translate 只翻译当前列表里展示的论文标题；英文标题始终保留，中文辅助标题不写入数据库。</p>
+                <label className="field">Google Translate API Key
+                  <input type="password" value={googleTranslateKey} onChange={(event) => setGoogleTranslateKey(event.target.value)} placeholder="可留空，改用 PAPER_RADAR_GOOGLE_TRANSLATE_API_KEY" />
+                </label>
+                <p className="muted">这个 key 仅保存在当前浏览器本地，用于调用后端翻译接口。</p>
               </Card>
               <Card title="后端" icon={<Database size={17} />}>
                 <p className="muted"><strong>API:</strong> {API_BASE}</p>
@@ -1355,7 +1409,17 @@ function MultiSelect({ label, options, selected, onChange }: {
   );
 }
 
-function BrowseView({ conferences, onAddToZotero }: { conferences: Array<{ conference: string; year: number; count: number }>; onAddToZotero: (ids: number[]) => void }) {
+function BrowseView({
+  conferences,
+  onAddToZotero,
+  pushToast,
+  googleTranslateKey
+}: {
+  conferences: Array<{ conference: string; year: number; count: number }>;
+  onAddToZotero: (ids: number[]) => void;
+  pushToast: (text: string, kind?: ToastKind) => void;
+  googleTranslateKey: string;
+}) {
   const [confs, setConfs] = useState<string[]>([]);
   const [years, setYears] = useState<string[]>([]);
   const [q, setQ] = useState("");
@@ -1365,6 +1429,9 @@ function BrowseView({ conferences, onAddToZotero }: { conferences: Array<{ confe
   const [loading, setLoading] = useState(false);
   const [active, setActive] = useState<BrowsePaper | null>(null);
   const [sel, setSel] = useState<Set<number>>(new Set());
+  const [showTitleTranslations, setShowTitleTranslations] = useState(false);
+  const [titleTranslations, setTitleTranslations] = useState<Record<number, string>>({});
+  const [titleTranslationLoading, setTitleTranslationLoading] = useState(false);
 
   const toggleSel = (id: number) => setSel((prev) => {
     const next = new Set(prev);
@@ -1413,6 +1480,39 @@ function BrowseView({ conferences, onAddToZotero }: { conferences: Array<{ confe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [confs, years, q, sort]);
 
+  useEffect(() => {
+    if (!showTitleTranslations) return;
+    const missing = items.filter((item) => item.title && !titleTranslations[item.id]).slice(0, 200);
+    if (missing.length === 0) return;
+
+    let cancelled = false;
+    const grouped = new Map<string, number[]>();
+    missing.forEach((item) => {
+      const ids = grouped.get(item.title) ?? [];
+      ids.push(item.id);
+      grouped.set(item.title, ids);
+    });
+    const titles = Array.from(grouped.keys());
+    setTitleTranslationLoading(true);
+    translateTitlesGoogle(titles, "zh-CN", googleTranslateKey)
+      .then((translated) => {
+        if (cancelled) return;
+        setTitleTranslations((prev) => {
+          const next = { ...prev };
+          titles.forEach((title, index) => {
+            const zh = translated[index] ?? "";
+            (grouped.get(title) ?? []).forEach((paperId) => { next[paperId] = zh; });
+          });
+          return next;
+        });
+      })
+      .catch((error) => pushToast(error.message, "error"))
+      .finally(() => {
+        if (!cancelled) setTitleTranslationLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [googleTranslateKey, items, pushToast, showTitleTranslations, titleTranslations]);
+
   const onConfsChange = (next: string[]) => {
     setConfs(next);
     const avail = yearsFor(next).map(String);
@@ -1434,6 +1534,10 @@ function BrowseView({ conferences, onAddToZotero }: { conferences: Array<{ confe
           <option value="year">按年份（新→旧）</option>
           <option value="title">按标题（A→Z）</option>
         </select>
+        <button className={`soft sm ${showTitleTranslations ? "toggle-on" : ""}`} onClick={() => setShowTitleTranslations((value) => !value)} title="用 Google Translate 为当前列表标题显示中文辅助行">
+          {titleTranslationLoading ? <Loader2 size={14} className="spin" /> : <Languages size={14} />}
+          {showTitleTranslations ? "隐藏中文标题" : "显示中文标题"}
+        </button>
         <button className="soft sm" onClick={reset} title="重置筛选"><RefreshCw size={14} />重置</button>
         <span className="browse-count">{loading && items.length === 0 ? "加载中…" : `共 ${total.toLocaleString()} 篇`}</span>
       </div>
@@ -1445,7 +1549,14 @@ function BrowseView({ conferences, onAddToZotero }: { conferences: Array<{ confe
               <input type="checkbox" checked={sel.has(p.id)} aria-label={`选择 ${p.title}`}
                 onClick={(e) => e.stopPropagation()}
                 onChange={(e) => { e.stopPropagation(); toggleSel(p.id); }} />
-              <h3 className="browse-title notranslate" translate="no">{p.title}</h3>
+              <div className="browse-title-block">
+                <h3 className="browse-title notranslate" translate="no">{p.title}</h3>
+                {showTitleTranslations && (
+                  <div className="paper-title-zh browse-title-zh" translate="yes" lang="zh-CN">
+                    {titleTranslations[p.id] || (titleTranslationLoading ? "中文标题翻译中…" : "中文标题暂不可用")}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="browse-meta">
               <span className="conf-badge">{p.conference.toUpperCase()} {p.year}</span>

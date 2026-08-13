@@ -87,6 +87,7 @@ PAPER_RADAR_DB=data/paper_radar.sqlite
 PAPER_RADAR_EMBED_BACKEND=auto
 PAPER_RADAR_EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2
 VITE_API_BASE=http://127.0.0.1:8000
+PAPER_RADAR_GOOGLE_TRANSLATE_API_KEY=
 ```
 
 如果你暂时不想下载 sentence-transformers 模型，可以用 fallback 向量器先跑通：
@@ -97,6 +98,15 @@ export PAPER_RADAR_EMBED_BACKEND=fallback
 ```
 
 切回真实 embedding 后，在「设置」里点击「重建 embeddings」，再重新排序。
+
+标题翻译是可选功能。若要在论文列表里显示中文辅助标题，可以在「设置 → 标题翻译」里填写 Google Cloud Translation API key；也可以用环境变量：
+
+```bash
+export PAPER_RADAR_GOOGLE_TRANSLATE_API_KEY=你的_key
+./scripts/start_paper_radar.sh
+```
+
+翻译结果只用于当前前端展示，不写入 SQLite，也不会修改 Zotero。设置页里的 key 仅保存在当前浏览器本地。
 
 ## Docker 启动
 
