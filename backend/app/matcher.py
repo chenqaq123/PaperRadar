@@ -416,7 +416,6 @@ def list_matches(
     conference: str | None,
     year: int | None,
     limit: int,
-    action: str | None = None,
 ) -> list[dict[str, Any]]:
     conditions = [
         """
@@ -437,9 +436,6 @@ def list_matches(
     if year:
         conditions.append("cp.year = ?")
         params.append(year)
-    if action:
-        conditions.append("lf.action = ?")
-        params.append(action)
     rows = conn.execute(
         f"""
         SELECT mr.*, cp.title, cp.abstract, cp.authors, cp.conference, cp.year, cp.url, cp.pdf_url,
@@ -463,7 +459,7 @@ def list_matches(
         (*params, limit),
     ).fetchall()
     items = [_match_row_to_dict(row) for row in rows]
-    if not items and profile_id and not action:
+    if not items and profile_id:
         items = match_profile_dynamic(conn, profile_id, conference, year, limit)
     return _annotate_in_zotero(conn, items)
 

@@ -486,13 +486,10 @@ def matches(
     conference: str | None = None,
     year: int | None = None,
     limit: int = 100,
-    action: str | None = None,
 ) -> dict[str, object]:
-    if action and action not in {"relevant", "not_relevant", "want_to_read", "read", "hide"}:
-        raise HTTPException(status_code=400, detail="Invalid feedback action.")
     with connect() as conn:
         init_db(conn)
-        items = list_matches(conn, profile_id, conference, year, max(1, min(limit, 1000)), action)
+        items = list_matches(conn, profile_id, conference, year, max(1, min(limit, 1000)))
     return {"items": items}
 
 

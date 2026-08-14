@@ -65,8 +65,7 @@ import katex from "katex";
 import "katex/dist/katex.min.css";
 import "./styles.css";
 
-type View = "browse" | "recommendations" | "queue" | "figures" | "profiles" | "data" | "settings";
-type FeedbackAction = "want_to_read" | "read" | "relevant" | "not_relevant" | "hide";
+type View = "browse" | "recommendations" | "figures" | "profiles" | "data" | "settings";
 type ToastKind = "info" | "success" | "error";
 type Toast = { id: number; kind: ToastKind; text: string };
 
@@ -75,7 +74,6 @@ const TITLE_TRANSLATION_BATCH_SIZE = 10;
 const NAV: Array<{ view: View; label: string; icon: React.ReactNode; group: string }> = [
   { view: "browse", label: "浏览论文", icon: <Library size={17} />, group: "工作区" },
   { view: "recommendations", label: "推荐", icon: <Sparkles size={17} />, group: "工作区" },
-  { view: "queue", label: "阅读队列", icon: <BookmarkCheck size={17} />, group: "工作区" },
   { view: "figures", label: "图表", icon: <ImageIcon size={17} />, group: "工作区" },
   { view: "profiles", label: "研究方向", icon: <Brain size={17} />, group: "资料库" },
   { view: "data", label: "数据与导入", icon: <Database size={17} />, group: "资料库" },
@@ -89,7 +87,9 @@ const NAV_GROUPS: string[] = NAV.reduce<string[]>((groups, item) => {
 
 function readUiState() {
   try {
-    return JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "{}");
+    const state = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "{}");
+    if (state.view === "queue") state.view = "recommendations"; // 阅读队列视图已移除
+    return state;
   } catch {
     return {};
   }
@@ -122,7 +122,6 @@ function App() {
   const [year, setYear] = useState(savedUi.year ?? 2026);
   const [matchConference, setMatchConference] = useState(savedUi.matchConference ?? "");
   const [matchYear, setMatchYear] = useState(savedUi.matchYear ?? "");
-  const [queueAction, setQueueAction] = useState<FeedbackAction>(savedUi.queueAction ?? "want_to_read");
   const [limit, setLimit] = useState(savedUi.limit ?? 120);
   const [zoteroPath, setZoteroPath] = useState("");
   const [zoteroCollection, setZoteroCollection] = useState("");
@@ -174,7 +173,7 @@ function App() {
     return { nextHealth, nextProfiles, nextProfileId };
   }
 
-  async function refreshMatches(nextProfileId = profileId, nextConference = matchConference, nextYear = matchYear, nextAction = view === "queue" ? queueAction : "") {
+  async function refreshMatches(nextProfileId = profileId, nextConference = matchConference, nextYear = matchYear) {
     const reqId = ++matchReq.current;
     setMatchesLoading(true);
     try {
@@ -182,7 +181,6 @@ function App() {
         profileId: nextProfileId,
         conference: nextConference || undefined,
         year: nextYear ? Number(nextYear) : undefined,
-        action: nextAction || undefined,
         limit
       });
       if (reqId !== matchReq.current) return; // a newer request superseded this one
@@ -203,12 +201,10 @@ function App() {
           const bootYear = savedUi.matchYear || (nextHealth.conferences?.[0]?.year ? String(nextHealth.conferences[0].year) : "");
           if (!savedUi.matchConference && bootConference) setMatchConference(bootConference);
           if (!savedUi.matchYear && bootYear) setMatchYear(bootYear);
-          const nextAction = savedUi.view === "queue" ? (savedUi.queueAction ?? "want_to_read") : "";
           const items = await getMatches({
             profileId: nextProfileId,
             conference: bootConference || undefined,
             year: bootYear ? Number(bootYear) : undefined,
-            action: nextAction || undefined,
             limit
           });
           setMatches(items);
@@ -225,9 +221,9 @@ function App() {
   useEffect(() => {
     window.localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ view, profileId, conference, year, matchConference, matchYear, queueAction, limit, collectionKey, hideInZotero, showTitleTranslations, googleTranslateKey })
+      JSON.stringify({ view, profileId, conference, year, matchConference, matchYear, limit, collectionKey, hideInZotero, showTitleTranslations, googleTranslateKey })
     );
-  }, [view, profileId, conference, year, matchConference, matchYear, queueAction, limit, collectionKey, hideInZotero, showTitleTranslations, googleTranslateKey]);
+  }, [view, profileId, conference, year, matchConference, matchYear, limit, collectionKey, hideInZotero, showTitleTranslations, googleTranslateKey]);
 
   useEffect(() => {
     const available = new Set(matches.map((item) => item.paper_id));
@@ -280,7 +276,7 @@ function App() {
     [filteredMatches]
   );
   useEffect(() => {
-    if (!showTitleTranslations || (view !== "recommendations" && view !== "queue")) return;
+    if (!showTitleTranslations || view !== "recommendations") return;
     const missing = filteredMatches.filter((item) => item.title && !titleTranslations[item.paper_id]).slice(0, 200);
     if (missing.length === 0) return;
 
@@ -414,12 +410,7 @@ function App() {
     if (result !== null) {
       const selectedKey = matchKey(selected);
       setSelected((current) => current ? { ...current, feedback_action: action } : current);
-      setMatches((items) => {
-        if (view === "queue" && action !== queueAction) {
-          return items.filter((item) => matchKey(item) !== selectedKey);
-        }
-        return items.map((item) => matchKey(item) === selectedKey ? { ...item, feedback_action: action } : item);
-      });
+      setMatches((items) => items.map((item) => matchKey(item) === selectedKey ? { ...item, feedback_action: action } : item));
     }
   }
 
@@ -472,7 +463,7 @@ function App() {
   function openProfilePapers(profile: Profile) {
     setProfileId(profile.id);
     setView("recommendations");
-    refreshMatches(profile.id, matchConference, matchYear, "").catch((error) => pushToast(error.message, "error"));
+    refreshMatches(profile.id, matchConference, matchYear).catch((error) => pushToast(error.message, "error"));
   }
   async function onDeleteProfile(profile: Profile) {
     if (profile.source_type !== "custom_text") {
@@ -487,7 +478,7 @@ function App() {
       setProfiles(nextProfiles);
       setProfileId(fallback?.id);
       if (profileId === profile.id) {
-        await refreshMatches(fallback?.id, matchConference, matchYear, view === "queue" ? queueAction : "");
+        await refreshMatches(fallback?.id, matchConference, matchYear);
       }
     }
   }
@@ -495,12 +486,8 @@ function App() {
   function openRecommendations() {
     setView("recommendations");
     if (matches.length === 0 && profileId) {
-      refreshMatches(profileId, matchConference, matchYear, "").catch((error) => pushToast(error.message, "error"));
+      refreshMatches(profileId, matchConference, matchYear).catch((error) => pushToast(error.message, "error"));
     }
-  }
-  function openQueue() {
-    setView("queue");
-    refreshMatches(profileId, matchConference, matchYear, queueAction).catch((error) => pushToast(error.message, "error"));
   }
   function selectMatchConference(value: string) {
     const availableYears = health.conferences.filter((item) => !value || item.conference === value).map((item) => item.year);
@@ -517,12 +504,12 @@ function App() {
     if (!latestConference) return;
     setMatchConference(latestConference.conference);
     setMatchYear(String(latestConference.year));
-    refreshMatches(profileId, latestConference.conference, String(latestConference.year), view === "queue" ? queueAction : "").catch((error) => pushToast(error.message, "error"));
+    refreshMatches(profileId, latestConference.conference, String(latestConference.year)).catch((error) => pushToast(error.message, "error"));
   }
   function clearScope() {
     setMatchConference("");
     setMatchYear("");
-    refreshMatches(profileId, "", "", view === "queue" ? queueAction : "").catch((error) => pushToast(error.message, "error"));
+    refreshMatches(profileId, "", "").catch((error) => pushToast(error.message, "error"));
   }
 
   function togglePaperSelection(paperId: number) {
@@ -626,7 +613,7 @@ function App() {
                 <button
                   key={item.view}
                   className={view === item.view ? "active" : ""}
-                  onClick={() => item.view === "recommendations" ? openRecommendations() : item.view === "queue" ? openQueue() : setView(item.view)}
+                  onClick={() => item.view === "recommendations" ? openRecommendations() : setView(item.view)}
                 >
                   {item.icon}<span>{item.label}</span>
                 </button>
@@ -661,7 +648,7 @@ function App() {
         <div className="view-area">
           {view === "browse" && <BrowseView conferences={health.conferences} onAddToZotero={openExportModal} pushToast={pushToast} googleTranslateKey={googleTranslateKey} />}
 
-          {(view === "recommendations" || view === "queue") && (
+          {view === "recommendations" && (
             <section className="rec-layout">
               <div className="results-pane">
                 {view === "recommendations" && (
@@ -874,7 +861,7 @@ function App() {
                         <span className="coverage-name">{group.name.toUpperCase()}</span>
                         <div className="coverage-years">
                           {group.years.map((item) => (
-                            <button key={item.year} className="chip-btn" onClick={() => { setConference(item.conference); setYear(item.year); setMatchConference(item.conference); setMatchYear(String(item.year)); refreshMatches(profileId, item.conference, String(item.year), "").then(() => setView("recommendations")).catch((error) => pushToast(error.message, "error")); }}>
+                            <button key={item.year} className="chip-btn" onClick={() => { setConference(item.conference); setYear(item.year); setMatchConference(item.conference); setMatchYear(String(item.year)); refreshMatches(profileId, item.conference, String(item.year)).then(() => setView("recommendations")).catch((error) => pushToast(error.message, "error")); }}>
                               {item.year}<small>{item.count}</small>
                             </button>
                           ))}
@@ -1778,13 +1765,12 @@ function figurePaperRank(paper: FigurePaper) {
   return oralRank * 10_000 + pdfRank * 1_000 + paper.paper_id;
 }
 function titleFor(view: View) {
-  return { browse: "浏览论文", recommendations: "推荐列表", queue: "阅读队列", figures: "图表学习", profiles: "研究方向", data: "数据与导入", settings: "设置" }[view];
+  return { browse: "浏览论文", recommendations: "推荐列表", figures: "图表学习", profiles: "研究方向", data: "数据与导入", settings: "设置" }[view];
 }
 function subtitleFor(view: View) {
   return {
     browse: "直接按会议 / 年份 / 关键词翻阅全库论文，点开任意一篇看摘要与原文。",
     recommendations: "按研究方向或临时兴趣浏览推荐论文，勾选后可一键加入 Zotero。",
-    queue: "按想读 / 已读 / 相关 / 隐藏管理你的阅读队列。",
     figures: "选会议 / 年份 / 类型，点开某篇即时抽取 PDF 里的配图供你学习排版与可视化。",
     profiles: "查看由 Zotero 标签、collection 和自定义文本生成的研究方向。",
     data: "导入 Zotero 与会议论文，并维护本地排序。",

@@ -251,13 +251,12 @@ export async function matchCustomText(text: string, conference?: string, year?: 
   return payload.items;
 }
 
-export async function getMatches(params: { profileId?: number; conference?: string; year?: number; limit?: number; action?: string }): Promise<Match[]> {
+export async function getMatches(params: { profileId?: number; conference?: string; year?: number; limit?: number }): Promise<Match[]> {
   const search = new URLSearchParams();
   if (params.profileId) search.set("profile_id", String(params.profileId));
   if (params.conference) search.set("conference", params.conference);
   if (params.year) search.set("year", String(params.year));
   if (params.limit) search.set("limit", String(params.limit));
-  if (params.action) search.set("action", params.action);
   const payload = await parseResponse<{ items: Match[] }>(await fetch(`${API_BASE}/api/matches?${search}`));
   return payload.items;
 }
